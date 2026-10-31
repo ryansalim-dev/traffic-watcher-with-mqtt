@@ -4,16 +4,28 @@ A native macOS debugging proxy for app developers, with HTTP(S) and MQTT as equa
 
 ## Status
 
-Early development. The MQTT decoder and the capture proxy engine are in place; TLS interception, storage and the macOS app come next.
+Early development. The MQTT decoder, the capture proxy engine and HTTPS interception are in place. Storage and the macOS app come next.
 
 ## Layout
 
 | Module | What it does |
 | --- | --- |
 | `MQTTCore` | Packet model, MQTT 5 properties, packet decoder, streaming decoder for chunked TCP or WebSocket data, and `MQTTSession`, which tracks the protocol version, client ID and per-direction topic aliases for one connection |
-| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange, and relays HTTPS `CONNECT` tunnels untouched. `MQTTForwarder` relays a local port to one broker and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
+| `TLSMitm` | `CertificateAuthority` generates a local root (P-256, PEM/DER export) and issues per-host leaf certificates for DNS names or IPs. `TLSInterceptor` caches a TLS context per host and holds the bypass list for pinned hosts |
+| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. `MQTTForwarder` relays a local port to one broker and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
 
-Planned next: `TLSMitm` (CA and leaf certificates to decrypt tunnels), MQTT over WebSocket, `Store` (SQLite capture log) and the SwiftUI app.
+Planned next: MQTT over WebSocket and MQTT over TLS, `Store` (SQLite capture log) and the SwiftUI app.
+
+### Decrypt HTTPS
+
+```swift
+let ca = try CertificateAuthority.generate()          // persist ca.certificatePEM / ca.privateKeyPEM
+try ca.certificateDER                                  // install and trust on the device or Simulator
+var configuration = HTTPProxyServer.Configuration()
+configuration.interceptor = TLSInterceptor(authority: ca, bypass: ["*.pinned-bank.com"])
+let proxy = HTTPProxyServer(group: group, sink: sink, configuration: configuration)
+try await proxy.start(port: 9090)
+```
 
 ### Try the MQTT forwarder
 

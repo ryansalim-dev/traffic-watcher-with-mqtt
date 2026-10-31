@@ -2,13 +2,21 @@ import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import NIOSSL
+import NIOTLS
+import TLSMitm
 
-/// A local HTTP forward proxy. Plain HTTP requests are captured in full; CONNECT requests
-/// open a byte-for-byte tunnel (TLS interception comes in a later module).
+/// A local HTTP forward proxy. Plain HTTP requests are captured in full. CONNECT requests are
+/// decrypted and captured when a `TLSInterceptor` is configured and the host is not bypassed;
+/// otherwise they become a byte-for-byte tunnel.
 public final class HTTPProxyServer: @unchecked Sendable {
     public struct Configuration: Sendable {
         /// Requests or responses larger than this are rejected rather than buffered.
         public var maximumBodySize: Int = 50 * 1024 * 1024
+        /// Enables HTTPS decryption. Nil relays every CONNECT untouched.
+        public var interceptor: TLSInterceptor?
+        /// How the proxy verifies real servers when it re-encrypts intercepted traffic.
+        public var upstreamTLS: TLSConfiguration = .makeClientConfiguration()
         public init() {}
     }
 
@@ -26,17 +34,13 @@ public final class HTTPProxyServer: @unchecked Sendable {
     /// Starts listening and returns the bound port (pass 0 to pick a free one).
     @discardableResult
     public func start(host: String = "127.0.0.1", port: Int = 0) async throws -> Int {
-        let sink = self.sink
-        let configuration = self.configuration
+        let shared = try ProxyContext(sink: sink, configuration: configuration)
         let channel = try await ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                let decoder = ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes))
-                let encoder = HTTPResponseEncoder()
-                let handler = ProxyRequestHandler(sink: sink, configuration: configuration, decoder: decoder, encoder: encoder)
-                return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandlers([decoder, encoder, handler])
+                channel.eventLoop.makeCompletedFuture {
+                    try ProxyRequestHandler.install(on: channel.pipeline.syncOperations, shared: shared, origin: nil)
                 }
             }
             .bind(host: host, port: port)
@@ -48,6 +52,32 @@ public final class HTTPProxyServer: @unchecked Sendable {
     public func stop() async throws {
         try await channel?.close().get()
         channel = nil
+    }
+}
+
+/// State shared by every connection of one proxy server.
+final class ProxyContext: @unchecked Sendable {
+    let sink: CaptureSink
+    let configuration: HTTPProxyServer.Configuration
+    let upstreamTLS: NIOSSLContext
+
+    init(sink: CaptureSink, configuration: HTTPProxyServer.Configuration) throws {
+        self.sink = sink
+        self.configuration = configuration
+        var upstream = configuration.upstreamTLS
+        upstream.applicationProtocols = ["http/1.1"]
+        self.upstreamTLS = try NIOSSLContext(configuration: upstream)
+    }
+}
+
+/// The server behind a decrypted CONNECT tunnel.
+struct InterceptedOrigin {
+    var host: String
+    var port: Int
+
+    func url(for uri: String) -> String {
+        let authority = ipAddressBytes(host).map { _ in host.contains(":") ? "[\(host)]" : host } ?? host
+        return "https://\(authority)\(port == 443 ? "" : ":\(port)")\(uri.hasPrefix("/") ? uri : "/" + uri)"
     }
 }
 
@@ -65,24 +95,40 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         case failed
     }
 
-    private let sink: CaptureSink
-    private let configuration: HTTPProxyServer.Configuration
+    private let shared: ProxyContext
     private let decoder: ByteToMessageHandler<HTTPRequestDecoder>
     private let encoder: HTTPResponseEncoder
+    /// Set when this handler serves requests decrypted from a CONNECT tunnel.
+    private let origin: InterceptedOrigin?
     private var state = State.idle
+    /// True once the CONNECT request's `.end` has been read; the codecs must not be swapped earlier.
+    private var connectRequestEnded = false
+    /// A protocol switch waiting for the CONNECT request's `.end`.
+    private var switchAfterConnectEnds: (() -> Void)?
     /// Pipelined requests that arrived while one was being forwarded.
     private var queued: [NIOAny] = []
 
-    init(
-        sink: CaptureSink,
-        configuration: HTTPProxyServer.Configuration,
+    private var sink: CaptureSink { shared.sink }
+    private var configuration: HTTPProxyServer.Configuration { shared.configuration }
+
+    private init(
+        shared: ProxyContext,
         decoder: ByteToMessageHandler<HTTPRequestDecoder>,
-        encoder: HTTPResponseEncoder
+        encoder: HTTPResponseEncoder,
+        origin: InterceptedOrigin?
     ) {
-        self.sink = sink
-        self.configuration = configuration
+        self.shared = shared
         self.decoder = decoder
         self.encoder = encoder
+        self.origin = origin
+    }
+
+    /// Adds an HTTP/1 request decoder, response encoder and proxy handler to the end of `pipeline`.
+    static func install(on pipeline: ChannelPipeline.SynchronousOperations, shared: ProxyContext, origin: InterceptedOrigin?) throws {
+        let decoder = ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes))
+        let encoder = HTTPResponseEncoder()
+        let handler = ProxyRequestHandler(shared: shared, decoder: decoder, encoder: encoder, origin: origin)
+        try pipeline.addHandlers([decoder, encoder, handler])
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -91,8 +137,17 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             pending.append(data)
             state = .switchingToTunnel(pending: pending)
             return
-        case .connectingTunnel, .failed:
-            return // the CONNECT request's .end, or input after an error
+        case .connectingTunnel:
+            if case .end = unwrapInboundIn(data) {
+                connectRequestEnded = true
+                if let pending = switchAfterConnectEnds {
+                    switchAfterConnectEnds = nil
+                    pending()
+                }
+            }
+            return
+        case .failed:
+            return // input after an error
         case .forwarding:
             queued.append(data)
             return
@@ -103,6 +158,11 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         switch (unwrapInboundIn(data), state) {
         case (.head(let head), .idle):
             if head.method == .CONNECT {
+                guard origin == nil else {
+                    respondWithError(context: context, status: .badRequest, message: "CONNECT inside a tunnel is not supported")
+                    state = .failed
+                    return
+                }
                 openTunnel(context: context, head: head)
             } else {
                 state = .receiving(head: head, body: context.channel.allocator.buffer(capacity: 0), startedAt: Date())
@@ -135,13 +195,15 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         let requestHeaders = head.headers.map { CapturedHeader(name: $0.name, value: $0.value) }
         let requestBody = Array(body.readableBytesView)
 
+        let url = origin?.url(for: head.uri) ?? head.uri
+
         func record(status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?) {
             sink.record(.httpExchange(HTTPExchange(
                 id: id,
                 startedAt: startedAt,
                 duration: Date().timeIntervalSince(startedAt),
                 method: head.method.rawValue,
-                url: head.uri,
+                url: url,
                 requestHeaders: requestHeaders,
                 requestBody: requestBody,
                 statusCode: status,
@@ -151,7 +213,13 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             )))
         }
 
-        guard let target = AbsoluteHTTPTarget(head.uri) else {
+        let target: AbsoluteHTTPTarget
+        if let origin {
+            let path = AbsoluteHTTPTarget(head.uri.replacingOccurrences(of: "https://", with: "http://"))?.originForm ?? head.uri
+            target = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: path)
+        } else if let absolute = AbsoluteHTTPTarget(head.uri) {
+            target = absolute
+        } else {
             let message = head.uri.lowercased().hasPrefix("https://")
                 ? "HTTPS must be sent through CONNECT"
                 : "Proxy requests need an absolute http:// URL"
@@ -175,6 +243,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             body: body,
             host: target.host,
             port: target.port,
+            tls: origin == nil ? nil : shared.upstreamTLS,
             on: context.eventLoop,
             maximumBodySize: configuration.maximumBodySize
         ).whenComplete { result in
@@ -242,8 +311,13 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             return
         }
         state = .connectingTunnel
-        context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { _ in }
 
+        if let interceptor = configuration.interceptor, interceptor.shouldIntercept(host: host) {
+            intercept(context: context, interceptor: interceptor, host: host, port: port)
+            return
+        }
+
+        context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { _ in }
         ClientBootstrap(group: context.eventLoop)
             .connectTimeout(.seconds(15))
             // Hold upstream reads until the glue is in place so server-first protocols lose nothing.
@@ -255,16 +329,60 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                     context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
                     self.respondWithError(context: context, status: .badGateway, message: String(describing: error))
                 case .success(let upstream):
-                    self.glue(context: context, upstream: upstream, host: host, port: port)
+                    self.relay(context: context, upstream: upstream, host: host, port: port)
                 }
             }
     }
 
-    private func glue(context: ChannelHandlerContext, upstream: Channel, host: String, port: Int) {
+    /// Decrypts the tunnel with a generated leaf and serves its requests with a new handler.
+    private func intercept(context: ChannelHandlerContext, interceptor: TLSInterceptor, host: String, port: Int) {
+        let tlsContext: NIOSSLContext
+        do {
+            tlsContext = try interceptor.serverContext(for: host)
+        } catch {
+            respondWithError(context: context, status: .badGateway, message: "Could not issue a certificate: \(error)")
+            return
+        }
+        let shared = self.shared
+        switchProtocols(context: context, onFailure: {}) { pipeline in
+            try pipeline.addHandler(NIOSSLServerHandler(context: tlsContext))
+            try pipeline.addHandler(TLSHandshakeReporter(sink: shared.sink, host: host, port: port))
+            try ProxyRequestHandler.install(on: pipeline, shared: shared, origin: InterceptedOrigin(host: host, port: port))
+        }
+    }
+
+    /// Relays the tunnel byte for byte.
+    private func relay(context: ChannelHandlerContext, upstream: Channel, host: String, port: Int) {
         let info = TunnelInfo(id: UUID(), openedAt: Date(), host: host, port: port)
         sink.record(.tunnelOpened(info))
+        var fromClient = 0
+        var fromServer = 0
+        let sink = self.sink
+        let (clientSide, serverSide) = GlueHandler.pair(
+            onReadA: { fromClient += $0.readableBytes },
+            onReadB: { fromServer += $0.readableBytes },
+            onClose: { sink.record(.tunnelClosed(id: info.id, bytesFromClient: fromClient, bytesFromServer: fromServer)) }
+        )
+        switchProtocols(context: context, onFailure: { upstream.close(promise: nil) }) { pipeline in
+            try upstream.pipeline.syncOperations.addHandler(serverSide)
+            try pipeline.addHandler(clientSide)
+        }
+        upstream.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
+    }
 
-        // Send the 200 through the HTTP encoder, then drop the HTTP codecs.
+    /// Answers the CONNECT with 200, swaps the HTTP codecs for the handlers `install` adds,
+    /// replays any bytes that arrived during the swap, then removes this handler.
+    private func switchProtocols(
+        context: ChannelHandlerContext,
+        onFailure: @escaping () -> Void,
+        install: @escaping (ChannelPipeline.SynchronousOperations) throws -> Void
+    ) {
+        guard connectRequestEnded else {
+            switchAfterConnectEnds = { [unowned self] in
+                self.switchProtocols(context: context, onFailure: onFailure, install: install)
+            }
+            return
+        }
         var head = HTTPResponseHead(version: .http1_1, status: .ok)
         head.headers.add(name: "Content-Length", value: "0")
         context.write(wrapOutboundOut(.head(head)), promise: nil)
@@ -275,24 +393,11 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         pipeline.syncOperations.removeHandler(encoder)
             .flatMap { pipeline.syncOperations.removeHandler(self.decoder) }
             .whenComplete { result in
-                guard case .success = result else {
-                    upstream.close(promise: nil)
-                    context.close(promise: nil)
-                    return
-                }
-                var fromClient = 0
-                var fromServer = 0
-                let sink = self.sink
-                let (clientSide, serverSide) = GlueHandler.pair(
-                    onReadA: { fromClient += $0.readableBytes },
-                    onReadB: { fromServer += $0.readableBytes },
-                    onClose: { sink.record(.tunnelClosed(id: info.id, bytesFromClient: fromClient, bytesFromServer: fromServer)) }
-                )
                 do {
-                    try upstream.pipeline.syncOperations.addHandler(serverSide)
-                    try pipeline.syncOperations.addHandler(clientSide)
+                    try result.get()
+                    try install(pipeline.syncOperations)
                 } catch {
-                    upstream.close(promise: nil)
+                    onFailure()
                     context.close(promise: nil)
                     return
                 }
@@ -302,8 +407,37 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 }
                 pipeline.syncOperations.removeHandler(self, promise: nil)
                 context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
-                upstream.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
             }
+    }
+}
+
+/// Sits behind the TLS server handler of an intercepted tunnel and reports clients that refuse
+/// the generated certificate.
+final class TLSHandshakeReporter: ChannelInboundHandler {
+    typealias InboundIn = ByteBuffer
+
+    private let sink: CaptureSink
+    private let host: String
+    private let port: Int
+    private var handshakeDone = false
+
+    init(sink: CaptureSink, host: String, port: Int) {
+        self.sink = sink
+        self.host = host
+        self.port = port
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if case TLSUserEvent.handshakeCompleted = event { handshakeDone = true }
+        context.fireUserInboundEventTriggered(event)
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        if !handshakeDone {
+            handshakeDone = true
+            sink.record(.tlsInterceptionFailed(host: host, port: port, reason: String(describing: error)))
+        }
+        context.close(promise: nil)
     }
 }
 
@@ -313,6 +447,13 @@ struct AbsoluteHTTPTarget: Equatable {
     var port: Int
     var authority: String
     var originForm: String
+
+    init(host: String, port: Int, originForm: String) {
+        self.host = host
+        self.port = port
+        self.authority = "\(host):\(port)"
+        self.originForm = originForm
+    }
 
     init?(_ uri: String) {
         let prefix = "http://"
