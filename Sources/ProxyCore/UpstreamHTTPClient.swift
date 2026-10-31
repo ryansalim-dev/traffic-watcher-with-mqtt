@@ -1,6 +1,8 @@
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import NIOSSL
+import TLSMitm
 
 struct UpstreamResponse {
     var head: HTTPResponseHead
@@ -26,6 +28,7 @@ enum UpstreamHTTPClient {
         body: ByteBuffer,
         host: String,
         port: Int,
+        tls: NIOSSLContext? = nil,
         on eventLoop: EventLoop,
         maximumBodySize: Int
     ) -> EventLoopFuture<UpstreamResponse> {
@@ -33,8 +36,15 @@ enum UpstreamHTTPClient {
         ClientBootstrap(group: eventLoop)
             .connectTimeout(.seconds(15))
             .channelInitializer { channel in
-                channel.pipeline.addHTTPClientHandlers().flatMap {
-                    channel.pipeline.addHandler(ResponseCollector(promise: promise, maximumBodySize: maximumBodySize))
+                channel.eventLoop.makeCompletedFuture {
+                    let sync = channel.pipeline.syncOperations
+                    if let tls {
+                        // SNI must be a DNS name, never an IP literal.
+                        let sni = ipAddressBytes(host) == nil ? host : nil
+                        try sync.addHandler(NIOSSLClientHandler(context: tls, serverHostname: sni))
+                    }
+                    try sync.addHTTPClientHandlers()
+                    try sync.addHandler(ResponseCollector(promise: promise, maximumBodySize: maximumBodySize))
                 }
             }
             .connect(host: host, port: port)

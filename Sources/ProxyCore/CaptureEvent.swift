@@ -45,6 +45,9 @@ public enum CaptureEvent: Equatable, Sendable {
     case mqtt(MQTTCaptureEvent)
     /// Decoding stopped for this connection; bytes are still relayed untouched.
     case mqttDecodingFailed(connectionID: UUID, reason: String)
+    /// The client rejected the generated certificate (often certificate pinning). Consider
+    /// adding the host to the interceptor's bypass list.
+    case tlsInterceptionFailed(host: String, port: Int, reason: String)
 }
 
 /// Receives capture events. Called from NIO event loops, so implementations must be thread-safe.
