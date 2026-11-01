@@ -202,15 +202,15 @@ enum Screenshots {
         }
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
-        let composerSize = NSSize(width: 880, height: 620)
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
+        let composerSize = NSSize(width: 820, height: 560)
+        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
+        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
 
         model.apply(freeLicense.entitlement)
         model.preparePublish(toTopic: "home/kitchen/light/set")
         model.composer.payloadText = #"{"on": true, "brightness": 80}"#
         model.composer.repeatCount = 1
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "20-mqtt-publish-free", into: directory)
+        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: false, name: "20-mqtt-publish-free", into: directory)
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL) async throws {

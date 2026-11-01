@@ -11,7 +11,22 @@ struct BreakpointsToggle: View {
         Button {
             center.isEnabled.toggle()
         } label: {
-            Label("Breakpoints", systemImage: symbol)
+            Label {
+                Text("Breakpoints")
+            } icon: {
+                Image(systemName: symbol)
+                    .overlay(alignment: .topTrailing) {
+                        if !center.paused.isEmpty {
+                            Text(center.paused.count.formatted())
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color(red: 0.1, green: 0.07, blue: 0))
+                                .padding(.horizontal, 3)
+                                .frame(minWidth: 14, minHeight: 14)
+                                .background(Theme.put, in: Capsule())
+                                .offset(x: 8, y: -7)
+                        }
+                    }
+            }
         }
         .foregroundStyle(center.isActive ? Theme.warning : Color.secondary)
         .help(help)
@@ -46,140 +61,184 @@ struct BreakpointEditor: View {
 
     private var isRequest: Bool { item.stage == .request }
 
+    @State private var bodyFormat: BodyFormat = .text
+
+    enum BodyFormat: String, CaseIterable, Identifiable {
+        case json = "JSON", text = "Text"
+        var id: String { rawValue }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 14) {
                     if isRequest {
-                        field("Method") {
-                            TextField("Method", text: $method).labelsHidden()
+                        FieldGroup(label: "Method") {
+                            BoxedTextField(title: "Method", text: $method, monospaced: true)
                         }
-                        field("URL") {
-                            TextField("URL", text: $url, axis: .vertical).labelsHidden().lineLimit(2...4)
+                        FieldGroup(label: "URL") {
+                            TextField("URL", text: $url, axis: .vertical)
+                                .labelsHidden()
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12.5, design: .monospaced))
+                                .lineLimit(1...4)
+                                .padding(.vertical, 6)
+                                .boxed()
                         }
                     } else {
-                        field("Status") {
+                        FieldGroup(label: "Status") {
                             HStack(spacing: 8) {
                                 TextField("Status", value: $status, format: .number.grouping(.never))
                                     .labelsHidden()
-                                    .frame(width: 70)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12.5, design: .monospaced))
+                                    .frame(width: 44)
+                                    .boxed()
                                 Text(Self.reasonPhrase(status))
                                     .font(.system(size: 12.5, weight: .semibold))
                                     .foregroundStyle(Theme.color(forStatus: status))
                             }
                         }
                     }
-                    field("Headers · one per line") {
-                        TextEditor(text: $headersText)
-                            .font(Theme.mono)
-                            .scrollContentBackground(.hidden)
-                            .padding(6)
-                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
+                    FieldGroup(label: "Headers · one per line") {
+                        CodeEditor(text: $headersText, fontSize: 12)
+                            .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
                     }
                 }
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12.5, design: .monospaced))
-                .padding(16)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
                 .frame(width: 340)
                 .frame(maxHeight: .infinity, alignment: .top)
-
-                Divider()
+                .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
 
                 VStack(spacing: 0) {
-                    HStack {
-                        CapsLabel("Body")
+                    HStack(spacing: 10) {
+                        if binaryBody == nil {
+                            Picker("Format", selection: $bodyFormat) {
+                                ForEach(BodyFormat.allCases) { Text($0.rawValue).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 130)
+                        } else {
+                            CapsLabel("Body")
+                        }
                         Spacer()
-                        Text(currentBody.isEmpty ? "Empty" : Formatting.byteCount(currentBody.count))
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
+                        Text(bodySummary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                        if binaryBody == nil {
+                            Button("Format") {
+                                if let pretty = Formatting.prettyJSON(Array(bodyText.utf8)) { bodyText = pretty }
+                            }
+                            .buttonStyle(ChipButtonStyle())
+                            .disabled(Formatting.prettyJSON(Array(bodyText.utf8)) == nil)
+                            .help("Pretty-print the JSON")
+                        }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    Divider()
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
                     if let binaryBody {
                         Text("Binary body (\(Formatting.byteCount(binaryBody.count))). It is passed on unchanged.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        TextEditor(text: $bodyText)
-                            .font(.system(size: 13, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .padding(10)
+                        CodeEditor(text: $bodyText, highlightJSON: bodyFormat == .json)
                     }
                 }
-                .background(Color(nsColor: .textBackgroundColor))
             }
-            Divider()
             footer
         }
         .frame(minWidth: 820, idealWidth: 880, minHeight: 560, idealHeight: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
         .tint(Theme.accent)
         .onAppear(perform: load)
         .interactiveDismissDisabled()
     }
 
-    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            CapsLabel(label)
-            content()
-        }
+    private var bodySummary: String {
+        let body = currentBody
+        guard !body.isEmpty else { return "Empty" }
+        let size = "\(body.count.formatted()) byte\(body.count == 1 ? "" : "s")"
+        if binaryBody == nil, Formatting.prettyJSON(body) != nil { return "\(size) · valid JSON" }
+        return size
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "pause.fill")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Theme.warning)
-                .frame(width: 30, height: 30)
+                .frame(width: 28, height: 28)
                 .background(Theme.warning.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text(isRequest ? "Request paused before it was sent" : "Response paused before the app sees it")
+                    Text(isRequest ? "Request paused" : "Response paused")
                         .font(.system(size: 14, weight: .semibold))
+                    Text(isRequest ? "before it was sent" : "before the app sees it")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
                     TypePill(text: item.request.method.uppercased(),
                              color: Theme.color(forPill: item.request.method.uppercased(), kind: .http), fixedWidth: nil)
+                    URLText(url: item.request.url)
+                        .lineLimit(1)
                 }
-                Text(item.title)
-                    .font(Theme.monoSmall)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("Paused at \(item.pausedAt.formatted(date: .omitted, time: .standard)). It continues unchanged after \(minutes) if left alone.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
             }
             Spacer()
             let waiting = center.paused.count - 1
             if waiting > 0 {
                 Text("\(waiting) more waiting")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .padding(.horizontal, 9)
-                    .frame(height: 22)
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
                     .background(Theme.warning.opacity(0.15), in: Capsule())
                     .foregroundStyle(Theme.warning)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
             Button("Abort", role: .destructive) { center.abort(item.id) }
+                .buttonStyle(ChipButtonStyle())
                 .help(isRequest ? "Don't send it; the app gets a 502 error" : "Drop the response; the app gets a 502 error")
-            Text("The app gets a 502").font(.system(size: 11.5)).foregroundStyle(.tertiary)
+            Text("Paused \(item.pausedAt.formatted(date: .omitted, time: .standard)) · continues unchanged after \(minutes)")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
             Spacer()
             Button("Reset Edits") { load() }
-            Button("Continue Unchanged") { center.resumeUnchanged(item.id) }
-            Button(isRequest ? "Send Edited" : "Return to App") { resume() }
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ChipButtonStyle())
+            Button("Continue") { center.resumeUnchanged(item.id) }
+                .buttonStyle(ChipButtonStyle())
+                .help("Let it through without your edits")
+            Button {
+                resume()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(isRequest ? "Send edited" : "Return edited")
+                    Text("⌘↩").opacity(0.7)
+                }
+            }
+            .buttonStyle(ChipButtonStyle(prominent: true))
+            .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(.bar)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
     private var minutes: String {
@@ -210,6 +269,7 @@ struct BreakpointEditor: View {
         if let text = String(bytes: bytes, encoding: .utf8) {
             bodyText = text
             binaryBody = nil
+            bodyFormat = text.isEmpty || Formatting.prettyJSON(bytes) != nil ? .json : .text
         } else {
             bodyText = ""
             binaryBody = bytes

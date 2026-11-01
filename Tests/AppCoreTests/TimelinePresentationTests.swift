@@ -82,8 +82,17 @@ final class TimelinePresentationTests: XCTestCase {
         model.section = .http
         XCTAssertTrue(model.visibleRows.allSatisfy { $0.kind == .http && $0.host == "api.example.com" })
 
+        model.section = .all
+        model.hostFilter = nil
+        model.methodFilter = "PUT"
+        XCTAssertEqual(model.visibleRows.map(\.badge), ["503"])
+        model.methodFilter = nil
+        model.statusClassFilter = 3
+        XCTAssertEqual(model.visibleRows.map(\.badge), ["304"])
+
         model.newSession()
         XCTAssertNil(model.hostFilter)
+        XCTAssertNil(model.statusClassFilter)
     }
 
     @MainActor
@@ -214,5 +223,14 @@ final class ModelQueryTests: XCTestCase {
         XCTAssertEqual(RateFormat.perSecond(0.05), "3/min")
         XCTAssertEqual(RateFormat.perSecond(0.93), "0.9/s")
         XCTAssertEqual(RateFormat.perSecond(12.4), "12/s")
+    }
+}
+
+final class CompactSizeTests: XCTestCase {
+    func testCompactByteCount() {
+        XCTAssertEqual(Formatting.compactByteCount(145), "145 B")
+        XCTAssertEqual(Formatting.compactByteCount(4300), "4.2 KB")
+        XCTAssertEqual(Formatting.compactByteCount(48 * 1024), "48 KB")
+        XCTAssertEqual(Formatting.compactByteCount(1_400_000), "1.3 MB")
     }
 }

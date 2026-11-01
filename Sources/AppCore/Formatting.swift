@@ -94,6 +94,19 @@ public enum Formatting {
         ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .binary)
     }
 
+    /// Short sizes for tight columns: "145 B", "4.2 KB", "48 KB", "1.3 MB".
+    public static func compactByteCount(_ count: Int) -> String {
+        if count < 1024 { return "\(count) B" }
+        let units = ["KB", "MB", "GB"]
+        var value = Double(count) / 1024
+        var unit = 0
+        while value >= 1024, unit < units.count - 1 {
+            value /= 1024
+            unit += 1
+        }
+        return value < 10 ? "\(String(format: "%.1f", value)) \(units[unit])" : "\(Int(value.rounded())) \(units[unit])"
+    }
+
     public static func duration(_ seconds: TimeInterval) -> String {
         seconds < 1 ? "\(Int((seconds * 1000).rounded())) ms" : String(format: "%.2f s", seconds)
     }

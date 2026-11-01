@@ -148,6 +148,10 @@ public final class CaptureViewModel {
     public var quickFilter: QuickFilter = .all
     /// Shows only this host's events when set (from the sidebar's Hosts list).
     public var hostFilter: String?
+    /// Shows only HTTP requests with this method when set ("+ Filter" menu).
+    public var methodFilter: String?
+    /// Shows only HTTP responses in this class (2 for 2xx … 5 for 5xx) when set.
+    public var statusClassFilter: Int?
     /// When the running capture started; nil while not capturing.
     public private(set) var captureStartedAt: Date?
     public var selection: TrafficRow.ID?
@@ -298,6 +302,8 @@ public final class CaptureViewModel {
             searchResults = nil
             searchText = ""
             hostFilter = nil
+            methodFilter = nil
+            statusClassFilter = nil
         } catch {
             lastError = "Could not start a new session: \(error)"
         }
@@ -342,9 +348,11 @@ public final class CaptureViewModel {
 
     /// Rows for the current section, narrowed by the quick filter, host and search.
     public var visibleRows: [TrafficRow] {
-        let section = section, filter = quickFilter, host = hostFilter
+        let section = section, filter = quickFilter, host = hostFilter, method = methodFilter, statusClass = statusClassFilter
         return (searchResults ?? rows).filter { row in
             section.includes(row) && filter.includes(row) && (host == nil || row.host == host)
+                && (method == nil || (row.kind == .http && row.pill == method))
+                && (statusClass == nil || (row.statusCode.map { $0 / 100 } == statusClass))
         }
     }
 

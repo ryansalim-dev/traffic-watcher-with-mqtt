@@ -49,14 +49,20 @@ struct InspectorView: View {
 
 struct HTTPInspector: View {
     let exchange: HTTPExchange
-    @State var part: Part = .response
+    @State private var part: Part = .response
+    @State private var tab: Tab = .body
 
     enum Part: String, CaseIterable, Identifiable {
         case request = "Request", response = "Response"
         var id: String { rawValue }
     }
 
+    enum Tab: Hashable { case headers, body, raw, timing }
+
     var body: some View {
+        let headers = part == .request ? exchange.requestHeaders : exchange.responseHeaders
+        let bytes = part == .request ? exchange.requestBody : exchange.responseBody
+        let contentType = part == .request ? exchange.requestContentType : exchange.responseContentType
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
@@ -64,39 +70,47 @@ struct HTTPInspector: View {
                              fixedWidth: nil)
                     StatusPill(code: exchange.statusCode)
                     Spacer()
-                    Text("\(Formatting.duration(exchange.duration)) · \(Formatting.byteCount(exchange.responseBody.count))")
-                        .font(.system(size: 12))
+                    Text("\(Formatting.duration(exchange.duration)) · \(Formatting.compactByteCount(exchange.responseBody.count))")
+                        .font(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
                 }
                 URLText(url: exchange.url)
                 if let error = exchange.error {
-                    Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(Theme.failure).font(.callout)
+                    Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(Theme.failure).font(.system(size: 12))
                 }
                 if let stages = exchange.breakpoint {
                     Label(Self.breakpointNote(stages), systemImage: "pause.circle.fill")
                         .foregroundStyle(Theme.warning)
-                        .font(.callout)
+                        .font(.system(size: 12))
                 }
+                TimingSummary(timing: exchange.timing, total: exchange.duration)
+                    .padding(.top, 2)
                 Picker("Part", selection: $part) {
                     ForEach(Part.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .padding(.top, 2)
             }
-            .padding(16)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
 
-            Divider()
+            InspectorTabs(tabs: [(Tab.headers, "Headers", headers.count), (.body, "Body", nil), (.raw, "Raw", nil), (.timing, "Timing", nil)],
+                          selection: $tab, trailing: tab == .body ? contentType : nil)
 
-            let headers = part == .request ? exchange.requestHeaders : exchange.responseHeaders
-            let body = part == .request ? exchange.requestBody : exchange.responseBody
-            VSplitView {
-                HeadersView(headers: headers)
-                    .frame(minHeight: 90, idealHeight: 170)
-                BodyView(bytes: body, contentType: headers.first { $0.name.lowercased() == "content-type" }?.value)
-                    .frame(minHeight: 120)
+            switch tab {
+            case .headers:
+                KeyValueList(rows: headers.map { ($0.name, $0.value) })
+            case .body:
+                BodyPanel(bytes: bytes, contentType: contentType)
+                    .id(part)
+            case .raw:
+                CodeText(text: part == .request ? exchange.rawRequest : exchange.rawResponse)
+            case .timing:
+                TimingDetail(exchange: exchange)
             }
         }
     }
@@ -120,7 +134,7 @@ struct StatusPill: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(code.map { "\($0) \(Self.reason(for: $0))".trimmingCharacters(in: .whitespaces) } ?? "No response")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
                 .lineLimit(1)
         }
@@ -130,48 +144,22 @@ struct StatusPill: View {
 
     private var color: Color { Theme.color(forStatus: code) }
 
-    static func reason(for code: Int) -> String {
-        switch code {
-        case 200: "OK"
-        case 201: "Created"
-        case 202: "Accepted"
-        case 204: "No Content"
-        case 206: "Partial Content"
-        case 301: "Moved Permanently"
-        case 302: "Found"
-        case 304: "Not Modified"
-        case 307: "Temporary Redirect"
-        case 308: "Permanent Redirect"
-        case 400: "Bad Request"
-        case 401: "Unauthorized"
-        case 403: "Forbidden"
-        case 404: "Not Found"
-        case 405: "Method Not Allowed"
-        case 409: "Conflict"
-        case 422: "Unprocessable Content"
-        case 429: "Too Many Requests"
-        case 500: "Internal Server Error"
-        case 502: "Bad Gateway"
-        case 503: "Service Unavailable"
-        case 504: "Gateway Timeout"
-        default: ""
-        }
-    }
+    static func reason(for code: Int) -> String { HTTPStatus.reason(for: code) }
 }
 
-/// A URL in monospace with the host emphasized and the rest dimmed.
+/// A URL in monospace with the host bright and the path dimmed. The scheme is left out, as in the mockup;
+/// the Raw tab and Copy as cURL keep the full URL.
 struct URLText: View {
     let url: String
 
     var body: some View {
-        let (lead, host, rest) = Self.split(url)
-        (Text(lead).foregroundStyle(.tertiary)
-            + Text(host).foregroundStyle(.primary).fontWeight(.medium)
-            + Text(rest).foregroundStyle(.secondary))
+        let (_, host, rest) = Self.split(url)
+        (Text(host).foregroundStyle(.primary).fontWeight(.medium) + Text(rest).foregroundStyle(.secondary))
             .font(.system(size: 12.5, design: .monospaced))
             .lineLimit(4)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
+            .help(url)
     }
 
     /// Splits "https://host/path" into ("https://", "host", "/path").
@@ -183,153 +171,74 @@ struct URLText: View {
     }
 }
 
-struct HeadersView: View {
-    let headers: [CapturedHeader]
-
-    var body: some View {
-        if headers.isEmpty {
-            Text("No headers").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
-                        GridRow {
-                            Text(header.name)
-                                .foregroundStyle(.tertiary)
-                                .gridColumnAlignment(.trailing)
-                            Text(header.value)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .font(Theme.mono)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-        }
-    }
-}
-
-// MARK: Body
-
-/// Shows a body or payload as pretty JSON, text or a hex dump, with a toggle for the raw hex.
-struct BodyView: View {
-    let bytes: [UInt8]
-    let contentType: String?
-    @State private var showHex = false
-
-    var body: some View {
-        let presentation = showHex ? BodyPresentation.binary(hexDump: Formatting.hexDump(Array(bytes.prefix(1_000_000))))
-                                   : Formatting.present(bytes, contentType: contentType)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(kindLabel(presentation)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(Formatting.byteCount(bytes.count)).font(.caption).foregroundStyle(.tertiary)
-                Spacer()
-                if !bytes.isEmpty {
-                    Toggle("Hex", isOn: $showHex).toggleStyle(.button).controlSize(.small)
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text(presentation), forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Copy")
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            if case .empty = presentation {
-                Text("No body").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                GeometryReader { proxy in
-                    ScrollView([.vertical, .horizontal]) {
-                        Text(text(presentation))
-                            .font(.callout.monospaced())
-                            .textSelection(.enabled)
-                            .fixedSize()
-                            .padding(12)
-                            .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .topLeading)
-                    }
-                }
-                .background(Color(nsColor: .textBackgroundColor))
-            }
-        }
-    }
-
-    private func text(_ presentation: BodyPresentation) -> String {
-        switch presentation {
-        case .empty: ""
-        case .json(let s), .text(let s): s
-        case .binary(let dump): dump
-        }
-    }
-
-    private func kindLabel(_ presentation: BodyPresentation) -> String {
-        switch presentation {
-        case .empty: "EMPTY"
-        case .json: "JSON"
-        case .text: "TEXT"
-        case .binary: "HEX"
-        }
-    }
-}
-
 // MARK: MQTT
 
 struct MQTTInspector: View {
     let capture: MQTTCaptureEvent
     var onReplay: (() -> Void)?
+    @State private var tab: Tab = .payload
+
+    enum Tab: Hashable { case payload, details, hex }
 
     var body: some View {
         let event = capture.event
+        let publish: MQTTPublish? = if case .publish(let p) = event.packet { p } else { nil }
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     TypePill(text: "\(event.packet.type)".uppercased(), color: Theme.mqtt, fixedWidth: nil)
-                    Text("MQTT \(event.version)").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("MQTT \(event.version)").font(.system(size: 12.5)).foregroundStyle(.secondary)
                     Spacer()
-                    if case .publish = event.packet, let onReplay {
-                        Button {
-                            onReplay()
-                        } label: {
-                            Label("Replay…", systemImage: "arrow.clockwise")
-                        }
-                        .controlSize(.small)
-                        .fixedSize()
-                        .help("Send this message again, edited if you like (Pro)")
-                    }
+                    Text("\(capture.timestamp.formatted(.dateTime.hour().minute().second().secondFraction(.fractional(3)))) · \(Formatting.compactByteCount(event.frame.rawBytes.count))")
+                        .font(.system(size: 12.5))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let publish {
+                    TopicPathText(path: event.resolvedTopic ?? publish.topic)
                 }
                 Text("\(capture.broker) · \(event.direction == .clientToBroker ? "client → broker" : "broker → client")")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-            }
-            .padding(16)
-            Divider()
-            VSplitView {
-                ScrollView {
-                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                        ForEach(Array(MQTTDescriber.rows(for: event).enumerated()), id: \.offset) { _, row in
-                            GridRow {
-                                Text(row.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                                Text(row.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                if publish != nil, let onReplay {
+                    HStack(spacing: 8) {
+                        Button {
+                            onReplay()
+                        } label: {
+                            Label("Replay…", systemImage: "arrow.clockwise")
                         }
+                        .buttonStyle(ChipButtonStyle(prominent: true))
+                        .help("Send this message again, edited if you like (Pro)")
+                        Button {
+                            copyToPasteboard(event.resolvedTopic ?? publish?.topic ?? "")
+                        } label: {
+                            Label("Copy topic", systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(ChipButtonStyle())
                     }
-                    .font(.callout)
-                    .padding(12)
                 }
-                .frame(minHeight: 100, idealHeight: 190)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
 
-                if case .publish(let publish) = event.packet {
-                    BodyView(bytes: publish.payload, contentType: nil).frame(minHeight: 120)
-                } else {
-                    BodyView(bytes: event.frame.rawBytes, contentType: "application/octet-stream").frame(minHeight: 120)
-                }
+            let tabs: [(tab: Tab, title: String, count: Int?)] = publish == nil
+                ? [(.details, "Details", nil), (.hex, "Hex", nil)]
+                : [(.payload, "Payload", nil), (.details, "Details", nil), (.hex, "Hex", nil)]
+            let current = publish == nil && tab == .payload ? .details : tab
+            InspectorTabs(tabs: tabs, selection: Binding(get: { current }, set: { tab = $0 }),
+                          trailing: "\(event.packet.type)".uppercased())
+
+            switch current {
+            case .payload:
+                BodyPanel(bytes: publish?.payload ?? [], contentType: nil, emptyText: "Empty payload")
+            case .details:
+                KeyValueList(rows: MQTTDescriber.rows(for: event).map { ($0.label, $0.value) }, nameWidth: 120, monospacedValues: false)
+            case .hex:
+                CodeText(text: Formatting.hexDump(event.frame.rawBytes))
             }
         }
     }
@@ -339,20 +248,38 @@ struct MQTTInspector: View {
 
 struct WebSocketInspector: View {
     let message: WebSocketMessage
+    @State private var tab: Tab = .payload
+
+    enum Tab: Hashable { case payload, hex }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
                     TypePill(text: "\(message.opcode)".uppercased(), color: Theme.webSocket, fixedWidth: nil)
                     Text(message.direction == .clientToServer ? "client → server" : "server → client")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(Formatting.compactByteCount(message.payload.count))
+                        .font(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                 }
-                Text(message.url).font(.callout.monospaced()).textSelection(.enabled)
+                URLText(url: message.url)
             }
-            .padding(12)
-            Divider()
-            BodyView(bytes: message.payload, contentType: message.opcode == .binary ? "application/octet-stream" : nil)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+
+            InspectorTabs(tabs: [(Tab.payload, "Payload", nil), (.hex, "Hex", nil)], selection: $tab, trailing: nil)
+            switch tab {
+            case .payload:
+                BodyPanel(bytes: message.payload, contentType: message.opcode == .binary ? "application/octet-stream" : nil,
+                          emptyText: "Empty message")
+            case .hex:
+                CodeText(text: Formatting.hexDump(message.payload))
+            }
         }
     }
 }
