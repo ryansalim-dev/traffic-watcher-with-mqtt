@@ -1,0 +1,49 @@
+name: Site
+
+# Publishes the landing page in site/ to the gh-pages branch, next to the Sparkle appcast that
+# release.yml writes there. Files this workflow doesn't own (appcast.xml, CNAME) are left alone.
+# One-time setup: Settings > Pages > Source "Deploy from a branch", branch gh-pages, folder /.
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Same group as release.yml, so the two never push gh-pages at the same time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages; then
+            git worktree add pages origin/gh-pages
+            git -C pages switch -c gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+
+      - name: Copy the site
+        run: |
+          find pages -mindepth 1 -maxdepth 1 ! -name .git ! -name appcast.xml ! -name CNAME -exec rm -rf {} +
+          cp -a site/. pages/
+          cd pages
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Site unchanged."
+          else
+            git commit -m "Site from ${GITHUB_SHA::7}"
+            git push origin gh-pages
+          fi
