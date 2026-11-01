@@ -528,26 +528,26 @@ struct TrafficTimeline: View {
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
-                .width(min: 200)
+                .width(min: 240, ideal: 640)
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.color(forStatus: row.statusCode))
                 }
-                .width(min: 32, ideal: 36, max: 44)
+                .width(40)
                 TableColumn("Duration") { row in
                     if let duration = row.duration {
                         DurationCell(duration: duration, longest: longest)
                     }
                 }
-                .width(min: 90, ideal: 116, max: 160)
+                .width(120)
                 TableColumn("Size") { row in
                     Text(row.size > 0 ? Formatting.byteCount(row.size) : "—")
                         .monospacedDigit()
                         .foregroundStyle(row.size > 0 ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.quaternary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .width(min: 50, ideal: 64, max: 90)
+                .width(72)
                 TableColumn("Time") { row in
                     Text(row.time, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
                         .secondFraction(.fractional(3)))
@@ -555,7 +555,7 @@ struct TrafficTimeline: View {
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .width(min: 100, ideal: 104, max: 120)
+                .width(100)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
             .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in
