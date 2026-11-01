@@ -55,6 +55,14 @@ Run the app on macOS:
 swift run TrafficWatcher
 ```
 
+### Package the app
+
+```sh
+scripts/build-app.sh          # dist/TrafficWatcher.app and a zip, universal, ad hoc signed
+```
+
+The script takes its settings from environment variables (version, signing identity, Sparkle feed and key, Lemon Squeezy IDs, notarization credentials); they are listed at the top of the script. CI builds the bundle on every pull request and takes the screenshots from it. Pushing a `v*` tag runs `.github/workflows/release.yml`, which signs with Developer ID, notarizes, publishes a GitHub release and adds it to the Sparkle appcast on GitHub Pages. The secrets it needs are listed at the top of that file.
+
 Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurchaseURL` and `TWReleaseDate` (`yyyy-MM-dd`) from Info.plist. Without them, as with `swift run`, Pro activation is off.
 
 `TrafficWatcher --screenshots <dir>` loads sample traffic and writes PNGs of the main screens. CI runs it on every pull request and uploads the result as the `screenshots` artifact.
