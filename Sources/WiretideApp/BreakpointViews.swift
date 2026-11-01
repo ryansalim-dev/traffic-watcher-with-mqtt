@@ -13,7 +13,7 @@ struct BreakpointsToggle: View {
         } label: {
             Label("Breakpoints", systemImage: symbol)
         }
-        .foregroundStyle(center.isActive ? Color.orange : Color.secondary)
+        .foregroundStyle(center.isActive ? Theme.warning : Color.secondary)
         .help(help)
     }
 

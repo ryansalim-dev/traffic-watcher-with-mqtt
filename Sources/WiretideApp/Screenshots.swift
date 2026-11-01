@@ -36,12 +36,23 @@ enum Screenshots {
         let store = try CaptureStore(path: scratch.appendingPathComponent("captures.sqlite").path, sessionName: "Screenshots")
         var configuration = EngineConfiguration()
         configuration.bypassHosts = ["*.apple.com"]
+        configuration.setSystemProxy = true
         configuration.forwarders = [
             ForwarderConfiguration(brokerHost: "broker.example.com", listenPort: 18830),
             ForwarderConfiguration(brokerHost: "iot.example.net", listenPort: 18831, useTLS: true),
         ]
         let model = CaptureViewModel(store: store, engine: CaptureEngine(authority: try storage.loadOrCreate(), threads: 1),
                                      configuration: configuration)
+        let size = NSSize(width: 1440, height: 860)
+        UserDefaults.standard.set(RowDensity.regular.rawValue, forKey: RowDensity.storageKey)
+        let firstLaunchLicense = LicenseManager(configuration: LicenseConfiguration(product: .init(storeID: 1, productIDs: [1]),
+                                                                                    purchaseURL: nil, releaseDate: nil),
+                                                storage: FileLicenseStorage(url: scratch.appendingPathComponent("first.json")))
+        try await shoot(ContentView(model: model, certificates: storage, license: firstLaunchLicense), size: size, dark: false,
+                        name: "00-first-launch", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: firstLaunchLicense), size: size, dark: true,
+                        name: "00-first-launch-dark", into: directory)
+
         await model.startCapture()
         for event in SampleTraffic.events() { model.ingest(event) }
 
@@ -58,7 +69,6 @@ enum Screenshots {
         let helper = SystemProxyHelper()
 
         func row(_ match: (TrafficRow) -> Bool) -> TrafficRow.ID? { model.rows.first(where: match)?.id }
-        let size = NSSize(width: 1440, height: 860)
 
         model.section = .all
         model.selection = row { $0.summary.hasPrefix("GET https://api.example.com/v2/devices") }
@@ -88,6 +98,18 @@ enum Screenshots {
         model.selection = model.visibleRows.first { $0.kind == .mqtt }?.id
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "08-search", into: directory)
         model.searchText = ""
+
+        // Quick filter and host filter together, then the compact density.
+        model.quickFilter = .errors
+        model.hostFilter = "api.example.com"
+        model.selection = row { $0.badge == "503" }
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "08b-filters-dark", into: directory)
+        model.quickFilter = .all
+        model.hostFilter = nil
+        UserDefaults.standard.set(RowDensity.compact.rawValue, forKey: RowDensity.storageKey)
+        model.selection = row { $0.summary.hasPrefix("GET https://api.example.com/v2/devices") }
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "08c-compact-dark", into: directory)
+        UserDefaults.standard.set(RowDensity.regular.rawValue, forKey: RowDensity.storageKey)
 
         let settingsSize = NSSize(width: 560, height: 560)
         let tabs: [(SettingsView.Tab, String)] = [(.proxy, "09-settings-proxy"), (.mqtt, "10-settings-mqtt"), (.certificate, "11-settings-certificate")]

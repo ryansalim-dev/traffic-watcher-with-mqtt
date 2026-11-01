@@ -45,6 +45,7 @@ struct WiretideApp: App {
         .commands {
             UpdateCommands(updates: updates)
             CaptureCommands(model: setup.model)
+            RowDensityCommands()
         }
 
         Settings {
@@ -124,6 +125,20 @@ enum AppSetup {
             return .ready(model, storage, license, SystemProxyHelper())
         } catch {
             return .failed(String(describing: error))
+        }
+    }
+}
+
+/// View › Regular Rows / Compact Rows.
+struct RowDensityCommands: Commands {
+    @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
+
+    var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            Picker("Row Height", selection: $density) {
+                ForEach(RowDensity.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
         }
     }
 }
