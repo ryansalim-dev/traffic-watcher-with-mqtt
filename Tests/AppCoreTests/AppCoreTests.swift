@@ -1,5 +1,6 @@
 @testable import AppCore
 import CaptureStore
+import Licensing
 import Foundation
 import MQTTCore
 import ProxyCore
@@ -255,5 +256,136 @@ final class CaptureEngineTests: XCTestCase {
         try await engine.stop()
         XCTAssertFalse(engine.isRunning)
         XCTAssertNil(engine.runningConfiguration)
+    }
+}
+
+final class LicenseManagerTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUp() {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("LicenseManager-\(UUID().uuidString)")
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private static let product = LemonSqueezyClient.Product(storeID: 7, productIDs: [42])
+
+    private static func reply(_ flag: String, ok: Bool = true, status: String = "active") -> String {
+        """
+        {"\(flag)": \(ok), "error": \(ok ? "null" : "\"license_key is disabled.\""),
+         "license_key": {"status": "\(status)", "created_at": "2026-09-21T14:13:20.000000Z", "expires_at": null},
+         "instance": {"id": "inst-9"},
+         "meta": {"store_id": 7, "product_id": 42, "customer_name": "Ryan", "customer_email": "ryan@example.com"}}
+        """
+    }
+
+    @MainActor
+    private func makeManager(replies: [String], now: Date, offline: Bool = false,
+                             configuration: LicenseConfiguration? = nil) -> LicenseManager {
+        final class Queue: @unchecked Sendable { var replies: [String] = [] }
+        let queue = Queue()
+        queue.replies = replies
+        return LicenseManager(
+            configuration: configuration ?? LicenseConfiguration(product: Self.product, purchaseURL: nil, releaseDate: nil),
+            storage: FileLicenseStorage(url: directory.appendingPathComponent("license.json")),
+            instanceName: "Test Mac",
+            transport: { _ in
+                if offline { throw URLError(.notConnectedToInternet) }
+                return (Data(queue.replies.removeFirst().utf8), 200)
+            },
+            now: { now }
+        )
+    }
+
+    @MainActor
+    func testActivatePersistsAndUnlocksPro() async {
+        let now = Date(timeIntervalSince1970: 1_793_500_000)
+        let manager = makeManager(replies: [Self.reply("activated")], now: now)
+        XCTAssertEqual(manager.sessionLimit, 3)
+        await manager.activate(key: "  KEY-1  ")
+        XCTAssertNil(manager.lastError)
+        XCTAssertTrue(manager.entitlement.isPro)
+        XCTAssertNil(manager.sessionLimit)
+        XCTAssertEqual(manager.license?.key, "KEY-1")
+        XCTAssertTrue(manager.summary.hasPrefix("Pro · updates until"))
+
+        // A new launch reads the stored license.
+        let relaunched = makeManager(replies: [], now: now)
+        XCTAssertTrue(relaunched.entitlement.isPro)
+    }
+
+    @MainActor
+    func testRefreshKeepsProOfflineAndRevokesOnRefusal() async {
+        let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
+        await makeManager(replies: [Self.reply("activated")], now: activatedAt).activate(key: "KEY-1")
+
+        let later = activatedAt + 4 * 86_400
+        let offline = makeManager(replies: [], now: later, offline: true)
+        await offline.refreshIfNeeded()
+        XCTAssertTrue(offline.entitlement.isPro)
+        XCTAssertNotNil(offline.lastError)
+
+        let refused = makeManager(replies: [Self.reply("valid", ok: false, status: "disabled")], now: later)
+        await refused.refreshIfNeeded()
+        XCTAssertEqual(refused.entitlement, .free(.revoked))
+        XCTAssertEqual(refused.sessionLimit, 3)
+    }
+
+    @MainActor
+    func testDeactivateForgetsLicense() async {
+        let now = Date(timeIntervalSince1970: 1_793_500_000)
+        let manager = makeManager(replies: [Self.reply("activated"), Self.reply("deactivated")], now: now)
+        await manager.activate(key: "KEY-1")
+        await manager.deactivate()
+        XCTAssertNil(manager.license)
+        XCTAssertEqual(manager.entitlement, .free(.noLicense))
+        XCTAssertNil(makeManager(replies: [], now: now).license)
+    }
+
+    @MainActor
+    func testUnconfiguredBuildExplainsWhyActivationFails() async {
+        let manager = makeManager(replies: [], now: Date(),
+                                  configuration: LicenseConfiguration(product: nil, purchaseURL: nil, releaseDate: nil))
+        XCTAssertFalse(manager.isConfigured)
+        await manager.activate(key: "KEY-1")
+        XCTAssertNotNil(manager.lastError)
+        XCTAssertNil(manager.license)
+    }
+
+    func testConfigurationFromInfoPlist() {
+        let configuration = LicenseConfiguration(infoDictionary: [
+            "TWLemonSqueezyStoreID": NSNumber(value: 7),
+            "TWLemonSqueezyProductIDs": "42, 43",
+            "TWPurchaseURL": "https://example.com/buy",
+            "TWReleaseDate": "2026-11-01",
+        ])
+        XCTAssertEqual(configuration.product, LemonSqueezyClient.Product(storeID: 7, productIDs: [42, 43]))
+        XCTAssertEqual(configuration.purchaseURL?.absoluteString, "https://example.com/buy")
+        XCTAssertEqual(configuration.releaseDate, Date(timeIntervalSince1970: 1_793_491_200))
+        XCTAssertNil(LicenseConfiguration(infoDictionary: [:]).product)
+    }
+}
+
+final class SessionLimitTests: XCTestCase {
+    @MainActor
+    func testFreeTierKeepsNewestSessions() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sessions-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try CaptureStore(path: directory.appendingPathComponent("db.sqlite").path, sessionName: "S1")
+        let model = CaptureViewModel(store: store, engine: nil)
+        for name in ["S2", "S3", "S4"] { model.newSession(named: name) }
+        XCTAssertEqual(try store.sessions().count, 4)
+
+        model.sessionLimit = 3
+        XCTAssertEqual(try store.sessions().map(\.name), ["S4", "S3", "S2"])
+        model.newSession(named: "S5")
+        XCTAssertEqual(try store.sessions().map(\.name), ["S5", "S4", "S3"])
+
+        model.sessionLimit = nil
+        model.newSession(named: "S6")
+        XCTAssertEqual(try store.sessions().count, 4)
     }
 }

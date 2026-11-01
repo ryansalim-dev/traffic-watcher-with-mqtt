@@ -2,6 +2,7 @@
 import AppCore
 import AppKit
 import CaptureStore
+import Licensing
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -30,8 +31,8 @@ struct TrafficWatcherApp: App {
     var body: some Scene {
         WindowGroup("Traffic Watcher") {
             switch setup {
-            case .ready(let model, let storage):
-                ContentView(model: model, certificates: storage)
+            case .ready(let model, let storage, let license):
+                ContentView(model: model, certificates: storage, license: license)
                     .frame(minWidth: 1000, minHeight: 600)
             case .failed(let message):
                 ContentUnavailableView("Traffic Watcher could not start", systemImage: "xmark.octagon", description: Text(message))
@@ -43,8 +44,8 @@ struct TrafficWatcherApp: App {
         }
 
         Settings {
-            if case .ready(let model, let storage) = setup {
-                SettingsView(model: model, certificates: storage)
+            if case .ready(let model, let storage, let license) = setup {
+                SettingsView(model: model, certificates: storage, license: license)
             }
         }
     }
@@ -52,13 +53,13 @@ struct TrafficWatcherApp: App {
 
 /// Builds the store, certificate authority and engine from the Application Support folder.
 enum AppSetup {
-    case ready(CaptureViewModel, CertificateStorage)
+    case ready(CaptureViewModel, CertificateStorage, LicenseManager)
     case failed(String)
 
     private static let configurationKey = "engineConfiguration"
 
     var model: CaptureViewModel? {
-        if case .ready(let model, _) = self { model } else { nil }
+        if case .ready(let model, _, _) = self { model } else { nil }
     }
 
     @MainActor
@@ -91,7 +92,11 @@ enum AppSetup {
                     }
                 }
             )
-            return .ready(model, storage)
+            let license = LicenseManager(
+                configuration: LicenseConfiguration(infoDictionary: Bundle.main.infoDictionary ?? [:]),
+                storage: KeychainLicenseStorage()
+            )
+            return .ready(model, storage, license)
         } catch {
             return .failed(String(describing: error))
         }

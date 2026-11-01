@@ -2,6 +2,7 @@
 import AppCore
 import AppKit
 import CaptureStore
+import Licensing
 import SwiftUI
 
 /// `TrafficWatcher --screenshots <dir>` fills a throwaway store with sample traffic, opens the
@@ -43,43 +44,59 @@ enum Screenshots {
         await model.startCapture()
         for event in SampleTraffic.events() { model.ingest(event) }
 
+        // License states for the License tab: no key yet, and an active Pro license checked today.
+        let licenseConfiguration = LicenseConfiguration(product: .init(storeID: 1, productIDs: [1]),
+                                                        purchaseURL: URL(string: "https://example.com/pro"), releaseDate: nil)
+        let freeLicense = LicenseManager(configuration: licenseConfiguration,
+                                         storage: FileLicenseStorage(url: scratch.appendingPathComponent("free.json")))
+        let proStorage = FileLicenseStorage(url: scratch.appendingPathComponent("pro.json"))
+        try proStorage.save(StoredLicense(key: "3F2A9C1D-77B0-4E5A-9D21-8C4E6B1F5A07", instanceID: "screenshot", status: .active,
+                                          customerName: "Ryan", customerEmail: "ryan@example.com",
+                                          purchasedAt: Date().addingTimeInterval(-40 * 86_400), lastValidatedAt: Date().addingTimeInterval(-3_600)))
+        let proLicense = LicenseManager(configuration: licenseConfiguration, storage: proStorage)
+
         func row(_ match: (TrafficRow) -> Bool) -> TrafficRow.ID? { model.rows.first(where: match)?.id }
         let size = NSSize(width: 1440, height: 860)
 
         model.section = .all
         model.selection = row { $0.summary.hasPrefix("GET https://api.example.com/v2/devices") }
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "01-timeline-http", into: directory)
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: true, name: "02-timeline-http-dark", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "01-timeline-http", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "02-timeline-http-dark", into: directory)
 
         model.section = .mqtt
         model.selection = row { $0.kind == .mqtt && $0.summary.contains("home/kitchen/temperature") }
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "03-mqtt-packets", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "03-mqtt-packets", into: directory)
 
         model.selection = row { $0.badge == "CONNECT" }
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
 
-        try await shoot(ContentView(model: model, certificates: storage, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
                         size: size, dark: false, name: "05-mqtt-topic-tree", into: directory)
 
         model.section = .webSocket
         model.selection = row { $0.kind == .webSocket && $0.size > 50 }
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "06-websocket", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "06-websocket", into: directory)
 
         model.section = .issues
         model.selection = row { $0.kind == .tls }
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "07-issues-pinned-host", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "07-issues-pinned-host", into: directory)
 
         model.section = .all
         model.searchText = "kitchen"
         model.selection = model.visibleRows.first { $0.kind == .mqtt }?.id
-        try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "08-search", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "08-search", into: directory)
         model.searchText = ""
 
-        let settingsSize = NSSize(width: 560, height: 470)
+        let settingsSize = NSSize(width: 560, height: 560)
         let tabs: [(SettingsView.Tab, String)] = [(.proxy, "09-settings-proxy"), (.mqtt, "10-settings-mqtt"), (.certificate, "11-settings-certificate")]
         for (tab, name) in tabs {
-            try await shoot(SettingsView(model: model, certificates: storage, tab: tab), size: settingsSize, dark: false, name: name, into: directory)
+            try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, tab: tab),
+                            size: settingsSize, dark: false, name: name, into: directory)
         }
+        try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, tab: .license),
+                        size: settingsSize, dark: false, name: "12-settings-license-free", into: directory)
+        try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, tab: .license),
+                        size: settingsSize, dark: true, name: "13-settings-license-pro-dark", into: directory)
         await model.stopCapture()
     }
 

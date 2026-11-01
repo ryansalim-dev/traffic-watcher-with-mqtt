@@ -1,10 +1,12 @@
 #if os(macOS)
 import AppCore
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
     @Bindable var model: CaptureViewModel
     let certificates: CertificateStorage
+    let license: LicenseManager
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
     @State var showInspector = true
@@ -68,7 +70,17 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            StatusBar(model: model)
+            StatusBar(model: model, license: license)
+        }
+        .task {
+            model.sessionLimit = license.sessionLimit
+            await license.refreshIfNeeded()
+        }
+        .onChange(of: license.entitlement) {
+            model.sessionLimit = license.sessionLimit
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await license.refreshIfNeeded() }
         }
         .alert("Something went wrong", isPresented: .constant(model.lastError != nil)) {
             Button("OK") {}
@@ -101,6 +113,7 @@ struct CaptureToggle: View {
 
 struct StatusBar: View {
     let model: CaptureViewModel
+    let license: LicenseManager
 
     var body: some View {
         HStack(spacing: 16) {
@@ -117,6 +130,16 @@ struct StatusBar: View {
             }
             Spacer()
             Text("\(model.rows.count) events")
+            SettingsLink {
+                Text(license.entitlement.isPro ? "PRO" : "FREE")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background((license.entitlement.isPro ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
+                    .foregroundStyle(license.entitlement.isPro ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(license.summary)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
