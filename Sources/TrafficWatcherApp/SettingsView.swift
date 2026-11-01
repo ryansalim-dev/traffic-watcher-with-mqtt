@@ -22,7 +22,7 @@ struct SettingsView: View {
                 .tabItem { Label("MQTT", systemImage: "antenna.radiowaves.left.and.right") }
                 .tag(Tab.mqtt)
             BreakpointSettings(center: model.breakpoints)
-                .tabItem { Label("Breakpoints", systemImage: "pause.octagon") }
+                .tabItem { Label("Breakpoints", systemImage: "pause.circle") }
                 .tag(Tab.breakpoints)
             CertificateSettings(model: model, certificates: certificates)
                 .tabItem { Label("Certificate", systemImage: "checkmark.seal") }

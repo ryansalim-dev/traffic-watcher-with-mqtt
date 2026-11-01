@@ -18,8 +18,8 @@ struct BreakpointsToggle: View {
     }
 
     private var symbol: String {
-        if !center.isAllowed { return "pause.octagon" }
-        return center.isEnabled ? "pause.octagon.fill" : "pause.octagon"
+        if !center.isAllowed { return "pause.circle" }
+        return center.isEnabled ? "pause.circle.fill" : "pause.circle"
     }
 
     private var help: String {
