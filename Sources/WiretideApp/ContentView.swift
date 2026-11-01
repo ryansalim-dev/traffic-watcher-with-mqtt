@@ -80,7 +80,6 @@ struct ContentView: View {
             }
         }
         .tint(Theme.accent)
-        .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 RecordingCapsule(model: model)

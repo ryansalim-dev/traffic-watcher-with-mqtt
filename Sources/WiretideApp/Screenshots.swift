@@ -219,6 +219,8 @@ enum Screenshots {
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = name.contains("settings") ? "Settings" : "Wiretide"
+        // Matches the app's main window, which hides its title (`.unified(showsTitle: false)`).
+        if V.self == ContentView.self { window.titleVisibility = .hidden }
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let hosting = NSHostingView(rootView: view)
         hosting.sceneBridgingOptions = [.toolbars, .title]
