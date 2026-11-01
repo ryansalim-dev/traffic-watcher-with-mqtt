@@ -49,7 +49,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .inspector(isPresented: $showInspector) {
+            .inspector(isPresented: showsSetup ? .constant(false) : $showInspector) {
                 Group {
                     if showsTopics {
                         TopicDetailView(tree: model.topicTree, topic: selectedTopic) { topic in
@@ -469,7 +469,7 @@ struct SidebarFooter: View {
         let port = String(model.proxyPort ?? model.configuration.proxyPort)
         let host = model.configuration.allowRemoteDevices ? "All interfaces" : "127.0.0.1"
         let https = model.configuration.decryptHTTPS ? "HTTPS decrypted" : "HTTPS relayed"
-        return "\(host):\(port) · \(https)"
+        return "\(host):\(port)\n\(https)"
     }
 }
 
@@ -528,7 +528,7 @@ struct TrafficTimeline: View {
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
-                .width(min: 200, ideal: 420)
+                .width(min: 200)
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -540,7 +540,7 @@ struct TrafficTimeline: View {
                         DurationCell(duration: duration, longest: longest)
                     }
                 }
-                .width(min: 90, ideal: 120, max: 160)
+                .width(min: 90, ideal: 116, max: 160)
                 TableColumn("Size") { row in
                     Text(row.size > 0 ? Formatting.byteCount(row.size) : "—")
                         .monospacedDigit()
@@ -555,7 +555,7 @@ struct TrafficTimeline: View {
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .width(min: 80, ideal: 90, max: 110)
+                .width(min: 100, ideal: 104, max: 120)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
             .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in

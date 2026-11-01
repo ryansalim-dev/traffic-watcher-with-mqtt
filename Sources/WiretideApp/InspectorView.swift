@@ -68,6 +68,7 @@ struct HTTPInspector: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                        .lineLimit(1)
                 }
                 URLText(url: exchange.url)
                 if let error = exchange.error {
@@ -121,8 +122,10 @@ struct StatusPill: View {
             Text(code.map { "\($0) \(Self.reason(for: $0))".trimmingCharacters(in: .whitespaces) } ?? "No response")
                 .font(.system(size: 12.5, weight: .semibold))
                 .monospacedDigit()
+                .lineLimit(1)
         }
         .foregroundStyle(color)
+        .layoutPriority(1)
     }
 
     private var color: Color { Theme.color(forStatus: code) }
