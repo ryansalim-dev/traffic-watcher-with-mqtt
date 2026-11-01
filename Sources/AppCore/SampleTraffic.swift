@@ -101,6 +101,14 @@ public enum SampleTraffic {
         return events
     }
 
+    /// A plausible phase split: DNS 5%, connect 11%, TLS 17%, waiting 55%, download the rest.
+    static func timing(_ duration: TimeInterval, tls: Bool) -> HTTPTiming {
+        let parts: [Double] = tls ? [4, 9, 14, 46, 11] : [4, 9, 0, 46, 11]
+        let scale = duration / parts.reduce(0, +)
+        return HTTPTiming(dns: parts[0] * scale, connect: parts[1] * scale, tls: tls ? parts[2] * scale : nil,
+                          waiting: parts[3] * scale, download: parts[4] * scale)
+    }
+
     private static func http(at date: Date, duration: TimeInterval, method: String, url: String, status: Int?,
                              contentType: String?, requestBody: String = "", body: String = "",
                              bodyBytes: [UInt8]? = nil) -> HTTPExchange {
@@ -123,7 +131,8 @@ public enum SampleTraffic {
         if let contentType { responseHeaders.insert(CapturedHeader(name: "Content-Type", value: contentType), at: 1) }
         return HTTPExchange(startedAt: date, duration: duration, method: method, url: url,
                             requestHeaders: requestHeaders, requestBody: Array(requestBody.utf8), statusCode: status,
-                            responseHeaders: responseHeaders, responseBody: response)
+                            responseHeaders: responseHeaders, responseBody: response,
+                            timing: status == nil ? nil : timing(duration, tls: url.hasPrefix("https://")))
     }
 }
 

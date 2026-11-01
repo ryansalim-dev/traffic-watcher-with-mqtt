@@ -1,4 +1,5 @@
 @testable import AppCore
+import ProxyCore
 import CaptureStore
 import Foundation
 import XCTest
@@ -143,5 +144,75 @@ final class SampleReadingsTests: XCTestCase {
         let node = tree.node(for: "home/kitchen/temperature")
         XCTAssertEqual(node?.messageCount, 10)
         XCTAssertEqual(NumericSeries.series(from: node?.history ?? []).map(\.field), ["celsius", "humidity"])
+    }
+}
+
+final class CodePresentationTests: XCTestCase {
+    func testHighlighterTagsKeysStringsNumbersAndLiterals() {
+        let lines = JSONHighlighter.lines("{\n  \"id\": \"thermo-01\",\n  \"t\": -21.5e1,\n  \"on\": true,\n  \"x\": null\n}")
+        XCTAssertEqual(lines.count, 6)
+        XCTAssertEqual(lines[1], [CodeToken(.plain, "  "), CodeToken(.key, "\"id\""), CodeToken(.plain, ": "),
+                                  CodeToken(.string, "\"thermo-01\""), CodeToken(.plain, ",")])
+        XCTAssertEqual(lines[2].first { $0.kind == .number }?.text, "-21.5e1")
+        XCTAssertEqual(lines[3].first { $0.kind == .literal }?.text, "true")
+        XCTAssertEqual(lines[4].first { $0.kind == .literal }?.text, "null")
+        // Half-typed input still tokenizes.
+        XCTAssertEqual(JSONHighlighter.tokens("{\"a\": \"unterminated").map(\.kind), [.plain, .key, .plain, .string])
+        XCTAssertEqual(JSONHighlighter.tokens("\"a\\\"b\"").map(\.text), ["\"a\\\"b\""])
+    }
+
+    func testTreeKeepsDocumentOrder() throws {
+        let tree = try XCTUnwrap(JSONTreeNode.parse(Array(#"{"z":1,"a":[true,"x"],"m":{}}"#.utf8)))
+        XCTAssertEqual(tree.kind, .object)
+        XCTAssertEqual(tree.value, "3 keys")
+        XCTAssertEqual(tree.children?.map(\.key), ["z", "a", "m"])
+        let array = try XCTUnwrap(tree.children?[1])
+        XCTAssertEqual(array.value, "2 items")
+        XCTAssertEqual(array.children?.map(\.value), ["true", "\"x\""])
+        XCTAssertEqual(array.children?.map(\.id), ["$.a[0]", "$.a[1]"])
+        XCTAssertNil(JSONTreeNode.parse(Array("{nope".utf8)))
+    }
+
+    func testRawAndCurl() {
+        let exchange = HTTPExchange(startedAt: Date(), duration: 0.1, method: "POST", url: "https://api.example.com/v2/login?x=1",
+                                    requestHeaders: [CapturedHeader(name: "Host", value: "api.example.com"),
+                                                     CapturedHeader(name: "Content-Type", value: "application/json; charset=utf-8")],
+                                    requestBody: Array("{\"u\":\"it's\"}".utf8), statusCode: 201,
+                                    responseHeaders: [CapturedHeader(name: "Content-Type", value: "application/json")], responseBody: [])
+        XCTAssertEqual(exchange.rawRequest,
+                       "POST /v2/login?x=1 HTTP/1.1\nHost: api.example.com\nContent-Type: application/json; charset=utf-8\n\n{\"u\":\"it's\"}")
+        XCTAssertEqual(exchange.rawResponse, "HTTP/1.1 201 Created\nContent-Type: application/json\n")
+        XCTAssertEqual(exchange.requestContentType, "application/json")
+        XCTAssertEqual(exchange.curlCommand,
+                       "curl \\\n  -X POST \\\n  'https://api.example.com/v2/login?x=1' \\\n  -H 'Content-Type: application/json; charset=utf-8' \\\n  --data-binary '{\"u\":\"it'\\''s\"}'")
+    }
+
+    func testSampleTimingAddsUp() {
+        let timing = SampleTraffic.timing(0.084, tls: true)
+        XCTAssertEqual(timing.total, 0.084, accuracy: 0.0001)
+        XCTAssertEqual(timing.phases.count, 5)
+        XCTAssertNil(SampleTraffic.timing(0.1, tls: false).tls)
+    }
+}
+
+final class ModelQueryTests: XCTestCase {
+    func testTopicFilterKeepsAncestorsAndLeafList() {
+        var tree = TopicTree()
+        for topic in ["home/kitchen/temperature", "home/kitchen/status", "home/garage/status", "sensors/porch/lux"] {
+            tree.record(topic: topic, payload: Array("1".utf8), retained: false, at: Date())
+        }
+        let filtered = tree.filtered(matching: "STATUS")
+        XCTAssertEqual(filtered.map(\.id), ["home"])
+        XCTAssertEqual(filtered[0].children.map(\.id), ["home/garage", "home/kitchen"])
+        XCTAssertEqual(filtered[0].children[1].children.map(\.id), ["home/kitchen/status"])
+        XCTAssertEqual(tree.filtered(matching: " ").count, 2)
+        XCTAssertEqual(tree.leafTopics, ["home/garage/status", "home/kitchen/status", "home/kitchen/temperature", "sensors/porch/lux"])
+    }
+
+    func testRateFormat() {
+        XCTAssertEqual(RateFormat.perSecond(0), "0/s")
+        XCTAssertEqual(RateFormat.perSecond(0.05), "3/min")
+        XCTAssertEqual(RateFormat.perSecond(0.93), "0.9/s")
+        XCTAssertEqual(RateFormat.perSecond(12.4), "12/s")
     }
 }
