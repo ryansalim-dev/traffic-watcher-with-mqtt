@@ -37,10 +37,10 @@ final class CertificateAuthorityTests: XCTestCase {
         XCTAssertLessThanOrEqual(leaf.notValidAfter.timeIntervalSince(leaf.notValidBefore), 398 * 86_400)
 
         var verifier = Verifier(rootCertificates: CertificateStore([ca.certificate])) {
-            RFC5280Policy(validationTime: Date())
+            RFC5280Policy()
             ServerIdentityPolicy(serverHostname: "api.example.com", serverIP: nil)
         }
-        let result = await verifier.validate(leafCertificate: leaf, intermediates: CertificateStore())
+        let result = await verifier.validate(leaf: leaf, intermediates: CertificateStore())
         guard case .validCertificate = result else { return XCTFail("\(result)") }
     }
 
@@ -52,6 +52,16 @@ final class CertificateAuthorityTests: XCTestCase {
         let v6 = try ca.issueLeaf(for: "::1").certificate
         guard case .ipAddress(let bytes)? = try v6.extensions.subjectAlternativeNames?.first else { return XCTFail() }
         XCTAssertEqual(Array(bytes.bytes), Array(repeating: 0, count: 15) + [1])
+    }
+}
+
+extension CertificateAuthorityTests {
+    func testLeafForSeveralHosts() throws {
+        let ca = try CertificateAuthority.generate()
+        let leaf = try ca.issueLeaf(for: ["broker.test", "localhost", "127.0.0.1"]).certificate
+        XCTAssertEqual(try leaf.extensions.subjectAlternativeNames.map(Array.init), [
+            .dnsName("broker.test"), .dnsName("localhost"), .ipAddress(.init(contentBytes: [127, 0, 0, 1])),
+        ])
     }
 }
 

@@ -32,7 +32,12 @@ public final class TLSInterceptor: @unchecked Sendable {
 
     /// Server-side TLS context presenting a leaf for `host`, issued on first use.
     public func serverContext(for host: String) throws -> NIOSSLContext {
-        let key = host.lowercased()
+        try serverContext(forHosts: [host])
+    }
+
+    /// Server-side TLS context presenting one leaf valid for all of `hosts`, issued on first use.
+    public func serverContext(forHosts hosts: [String]) throws -> NIOSSLContext {
+        let key = hosts.map { $0.lowercased() }.joined(separator: ",")
         lock.lock()
         if let cached = contexts[key] {
             lock.unlock()
@@ -40,7 +45,7 @@ public final class TLSInterceptor: @unchecked Sendable {
         }
         lock.unlock()
 
-        let context = try NIOSSLContext(configuration: authority.issueLeaf(for: host).serverTLSConfiguration())
+        let context = try NIOSSLContext(configuration: authority.issueLeaf(for: hosts).serverTLSConfiguration())
         lock.lock(); defer { lock.unlock() }
         if let raced = contexts[key] { return raced }
         contexts[key] = context

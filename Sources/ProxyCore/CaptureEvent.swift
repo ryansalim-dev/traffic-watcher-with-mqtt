@@ -38,6 +38,21 @@ public struct MQTTCaptureEvent: Equatable, Sendable {
     public var event: MQTTSessionEvent
 }
 
+public enum WebSocketDirection: Equatable, Sendable {
+    case clientToServer
+    case serverToClient
+}
+
+/// One complete WebSocket message (fragments joined, payload unmasked) on a non-MQTT socket.
+public struct WebSocketMessage: Equatable, Sendable {
+    public var connectionID: UUID
+    public var timestamp: Date
+    public var url: String
+    public var direction: WebSocketDirection
+    public var opcode: WebSocketOpcode
+    public var payload: [UInt8]
+}
+
 public enum CaptureEvent: Equatable, Sendable {
     case httpExchange(HTTPExchange)
     case tunnelOpened(TunnelInfo)
@@ -48,6 +63,9 @@ public enum CaptureEvent: Equatable, Sendable {
     /// The client rejected the generated certificate (often certificate pinning). Consider
     /// adding the host to the interceptor's bypass list.
     case tlsInterceptionFailed(host: String, port: Int, reason: String)
+    case webSocketMessage(WebSocketMessage)
+    /// Frame parsing stopped for this socket; bytes are still relayed untouched.
+    case webSocketDecodingFailed(connectionID: UUID, reason: String)
 }
 
 /// Receives capture events. Called from NIO event loops, so implementations must be thread-safe.
