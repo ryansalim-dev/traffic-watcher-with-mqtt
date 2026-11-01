@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Traffic Watcher · HTTP, WebSocket and MQTT debugging for macOS</title>
+  <title>Wiretide · HTTP, WebSocket and MQTT debugging for macOS</title>
   <meta name="description" content="A native macOS debugging proxy that shows HTTP(S), WebSocket and MQTT traffic side by side in one timeline. Free during the beta.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0c0d12" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f7f7fa" media="(prefers-color-scheme: light)">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Traffic Watcher">
+  <meta property="og:title" content="Wiretide">
   <meta property="og:description" content="HTTP, WebSocket and MQTT in one timeline. A native macOS debugging proxy for app developers.">
   <meta property="og:image" content="https://ryansalim-dev.github.io/traffic-watcher-with-mqtt/images/og.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -21,9 +21,9 @@
 <body>
   <header class="nav">
     <div class="wrap nav-inner">
-      <a class="brand" href="#top" aria-label="Traffic Watcher home">
+      <a class="brand" href="#top" aria-label="Wiretide home">
         <img src="images/icon.svg" alt="" width="28" height="28">
-        <span>Traffic Watcher</span>
+        <span>Wiretide</span>
       </a>
       <nav class="nav-links" aria-label="Sections">
         <a href="#features">Features</a>
@@ -40,7 +40,7 @@
       <div class="wrap">
         <p class="pill"><span class="dot"></span>Public beta · free while it lasts</p>
         <h1>Your app talks HTTP <em>and</em> MQTT.<br>Now you can watch both.</h1>
-        <p class="lede">Traffic Watcher is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, in the order they happened.</p>
+        <p class="lede">Wiretide is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, in the order they happened.</p>
         <div class="cta-row">
           <a class="btn btn-primary" data-download href="#download">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Zm-8 15a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/></svg>
@@ -54,7 +54,7 @@
           <picture>
             <source srcset="images/02-timeline-http-dark.webp" media="(prefers-color-scheme: dark)">
             <img src="images/01-timeline-http.webp" width="1440" height="860"
-                 alt="Traffic Watcher's timeline: HTTPS requests, MQTT CONNECT, SUBSCRIBE and PUBLISH packets and WebSocket text frames in one list, with a JSON response open in the inspector.">
+                 alt="Wiretide's timeline: HTTPS requests, MQTT CONNECT, SUBSCRIBE and PUBLISH packets and WebSocket text frames in one list, with a JSON response open in the inspector.">
           </picture>
         </figure>
 
@@ -95,7 +95,7 @@
           <article class="card">
             <div class="icon i-warn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6l-9-4Zm0 2.18 7 3.11V12c0 3.9-2.9 7.3-7 8-4.1-.7-7-4.1-7-8V7.29l7-3.11ZM11 7h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg></div>
             <h3>Spot pinned hosts</h3>
-            <p>When a client rejects the certificate, Traffic Watcher says so instead of failing silently. Bypass the host with one click.</p>
+            <p>When a client rejects the certificate, Wiretide says so instead of failing silently. Bypass the host with one click.</p>
           </article>
           <article class="card">
             <div class="icon i-export" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a1 1 0 0 1 .7.3l4 4a1 1 0 1 1-1.4 1.4L13 6.42V15a1 1 0 1 1-2 0V6.41L8.7 8.7a1 1 0 1 1-1.4-1.4l4-4A1 1 0 0 1 12 3ZM5 14a1 1 0 0 1 1 1v3h12v-3a1 1 0 1 1 2 0v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z"/></svg></div>
@@ -111,7 +111,7 @@
         <div class="split-copy">
           <p class="eyebrow eyebrow-mqtt">Built for MQTT</p>
           <h2>See your broker conversation, not a wall of bytes.</h2>
-          <p>Most proxies stop at HTTP. IoT and real-time apps don't. Point your app at a local port and Traffic Watcher relays it to your broker, decoding every packet on the way through.</p>
+          <p>Most proxies stop at HTTP. IoT and real-time apps don't. Point your app at a local port and Wiretide relays it to your broker, decoding every packet on the way through.</p>
           <ul class="checks">
             <li><strong>Plain TCP, TLS or WebSocket.</strong> For MQTT over TLS it terminates and re-encrypts, so you see the packets without changing the broker.</li>
             <li><strong>A live topic tree.</strong> Browse <code>home/kitchen/temperature</code> the way you think about it, with the last payload and message counts per topic.</li>
@@ -203,11 +203,11 @@
         </details>
         <details>
           <summary>Why isn't it on the Mac App Store?</summary>
-          <p>A debugging proxy needs to run a local proxy, install a root certificate and talk to the iOS Simulator, which the App Store sandbox doesn't allow. Traffic Watcher is signed with a Developer ID and notarized by Apple, and it updates itself.</p>
+          <p>A debugging proxy needs to run a local proxy, install a root certificate and talk to the iOS Simulator, which the App Store sandbox doesn't allow. Wiretide is signed with a Developer ID and notarized by Apple, and it updates itself.</p>
         </details>
         <details>
           <summary>How do I capture MQTT?</summary>
-          <p>Add your broker in Settings. Traffic Watcher listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy.</p>
+          <p>Add your broker in Settings. Wiretide listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy.</p>
         </details>
         <details>
           <summary>Does it work with the iOS Simulator and real devices?</summary>
@@ -243,7 +243,7 @@
 
   <footer class="footer">
     <div class="wrap footer-inner">
-      <p>© 2026 Traffic Watcher</p>
+      <p>© 2026 Wiretide</p>
       <nav aria-label="Footer">
         <a href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt">GitHub</a>
         <a href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases">Release notes</a>

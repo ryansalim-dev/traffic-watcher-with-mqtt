@@ -69,4 +69,4 @@ Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurc
 
 ## Landing page
 
-`site/` is the static landing page, published to GitHub Pages (the `gh-pages` branch, next to the Sparkle appcast) by `.github/workflows/site.yml` on every push to `main` that touches it. Download, checkout and waitlist links are set in `site/config.js`. Preview locally with `python3 -m http.server -d site`.
+`site/` is the static landing page for the public name, Wiretide, published to GitHub Pages (the `gh-pages` branch, next to the Sparkle appcast) by `.github/workflows/site.yml` on every push to `main` that touches it. Download, checkout and waitlist links are set in `site/config.js`. Preview locally with `python3 -m http.server -d site`.
