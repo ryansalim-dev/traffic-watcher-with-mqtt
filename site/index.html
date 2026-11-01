@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Traffic Watcher · HTTP, WebSocket and MQTT debugging for macOS</title>
+  <meta name="description" content="A native macOS debugging proxy that shows HTTP(S), WebSocket and MQTT traffic side by side in one timeline. Free during the beta.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0c0d12" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f7fa" media="(prefers-color-scheme: light)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Traffic Watcher">
+  <meta property="og:description" content="HTTP, WebSocket and MQTT in one timeline. A native macOS debugging proxy for app developers.">
+  <meta property="og:image" content="https://ryansalim-dev.github.io/traffic-watcher-with-mqtt/images/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="images/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top" aria-label="Traffic Watcher home">
+        <img src="images/icon.svg" alt="" width="28" height="28">
+        <span>Traffic Watcher</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#features">Features</a>
+        <a href="#mqtt">MQTT</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="btn btn-small" data-download href="#download">Download beta</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap">
+        <p class="pill"><span class="dot"></span>Public beta · free while it lasts</p>
+        <h1>Your app talks HTTP <em>and</em> MQTT.<br>Now you can watch both.</h1>
+        <p class="lede">Traffic Watcher is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, in the order they happened.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" data-download href="#download">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Zm-8 15a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/></svg>
+            Download for macOS
+          </a>
+          <a class="btn btn-ghost" href="#waitlist">Get the early-bird price</a>
+        </div>
+        <p class="fine">macOS 14 Sonoma or later · Apple silicon and Intel · Notarized by Apple</p>
+
+        <figure class="window hero-shot">
+          <picture>
+            <source srcset="images/02-timeline-http-dark.webp" media="(prefers-color-scheme: dark)">
+            <img src="images/01-timeline-http.webp" width="1440" height="860"
+                 alt="Traffic Watcher's timeline: HTTPS requests, MQTT CONNECT, SUBSCRIBE and PUBLISH packets and WebSocket text frames in one list, with a JSON response open in the inspector.">
+          </picture>
+        </figure>
+
+        <ul class="protocols" aria-label="Supported protocols">
+          <li><span class="tag tag-http">GET 200</span>HTTP &amp; HTTPS</li>
+          <li><span class="tag tag-ws">TEXT</span>WebSocket</li>
+          <li><span class="tag tag-mqtt">PUBLISH</span>MQTT 3.1.1 &amp; 5</li>
+          <li><span class="tag tag-tls">TLS</span>over TCP, TLS or WebSocket</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <div class="wrap">
+        <p class="eyebrow">Features</p>
+        <h2>Everything a debugging proxy should do, without the protocol blind spot.</h2>
+        <div class="grid features">
+          <article class="card">
+            <div class="icon i-http" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.93 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.93 8ZM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96ZM4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4H4.26Zm.81 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.07 16Zm2.95-8H5.07a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.02 8ZM12 19.96A14.1 14.1 0 0 1 10.09 16h3.82A14.1 14.1 0 0 1 12 19.96ZM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4Zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56ZM16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4h-3.38Z"/></svg></div>
+            <h3>Decrypt HTTPS</h3>
+            <p>A local root certificate issues per-host certificates on the fly. Install it on a device or straight into the iOS Simulator from Settings.</p>
+          </article>
+          <article class="card">
+            <div class="icon i-mqtt" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4a1 1 0 0 1 1-1 16 16 0 0 1 16 16 1 1 0 1 1-2 0A14 14 0 0 0 5 5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1 10 10 0 0 1 10 10 1 1 0 1 1-2 0 8 8 0 0 0-8-8 1 1 0 0 1-1-1Zm2 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg></div>
+            <h3>Decode MQTT</h3>
+            <p>Every packet from CONNECT to DISCONNECT, for MQTT 3.1.1 and 5, with properties, QoS, retain flags and topic aliases resolved.</p>
+          </article>
+          <article class="card">
+            <div class="icon i-ws" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16.3 3.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4L17.58 8H4a1 1 0 0 1 0-2h13.59L16.3 4.7a1 1 0 0 1 0-1.4Zm-8.6 10a1 1 0 0 1 0 1.4L6.42 16H20a1 1 0 1 1 0 2H6.41l1.3 1.3a1 1 0 1 1-1.42 1.4l-3-3a1 1 0 0 1 0-1.4l3-3a1 1 0 0 1 1.42 0Z"/></svg></div>
+            <h3>Follow WebSockets</h3>
+            <p>Upgrades over HTTP or decrypted HTTPS are relayed with every frame decoded. MQTT-over-WebSocket subprotocols show up as MQTT.</p>
+          </article>
+          <article class="card">
+            <div class="icon i-search" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.19l4.6 4.6a1 1 0 0 1-1.4 1.42l-4.6-4.6A7 7 0 1 1 10 3Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z"/></svg></div>
+            <h3>Search everything</h3>
+            <p>Full-text search across URLs, headers, text bodies, MQTT topics and payloads, in the live session and the ones you saved.</p>
+          </article>
+          <article class="card">
+            <div class="icon i-warn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6l-9-4Zm0 2.18 7 3.11V12c0 3.9-2.9 7.3-7 8-4.1-.7-7-4.1-7-8V7.29l7-3.11ZM11 7h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg></div>
+            <h3>Spot pinned hosts</h3>
+            <p>When a client rejects the certificate, Traffic Watcher says so instead of failing silently. Bypass the host with one click.</p>
+          </article>
+          <article class="card">
+            <div class="icon i-export" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a1 1 0 0 1 .7.3l4 4a1 1 0 1 1-1.4 1.4L13 6.42V15a1 1 0 1 1-2 0V6.41L8.7 8.7a1 1 0 1 1-1.4-1.4l4-4A1 1 0 0 1 12 3ZM5 14a1 1 0 0 1 1 1v3h12v-3a1 1 0 1 1 2 0v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z"/></svg></div>
+            <h3>Export and share</h3>
+            <p>HAR 1.2 for HTTP and JSON Lines for MQTT, so a capture can go into a bug report, a test fixture or another tool.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="mqtt" class="section section-alt">
+      <div class="wrap split">
+        <div class="split-copy">
+          <p class="eyebrow eyebrow-mqtt">Built for MQTT</p>
+          <h2>See your broker conversation, not a wall of bytes.</h2>
+          <p>Most proxies stop at HTTP. IoT and real-time apps don't. Point your app at a local port and Traffic Watcher relays it to your broker, decoding every packet on the way through.</p>
+          <ul class="checks">
+            <li><strong>Plain TCP, TLS or WebSocket.</strong> For MQTT over TLS it terminates and re-encrypts, so you see the packets without changing the broker.</li>
+            <li><strong>A live topic tree.</strong> Browse <code>home/kitchen/temperature</code> the way you think about it, with the last payload and message counts per topic.</li>
+            <li><strong>Payloads you can read.</strong> JSON is pretty-printed, everything else has a hex view one click away.</li>
+            <li><strong>Session context.</strong> Client ID, protocol version, keep alive and per-direction topic aliases are tracked per connection.</li>
+          </ul>
+        </div>
+        <div class="split-media">
+          <figure class="window">
+            <img src="images/05-mqtt-topic-tree.webp" width="1440" height="860" loading="lazy"
+                 alt="The MQTT topic tree: home, bedroom, garage and kitchen topics with their last JSON payloads and message counts.">
+          </figure>
+          <figure class="window window-offset">
+            <img src="images/04-mqtt-connect-dark.webp" width="1440" height="860" loading="lazy"
+                 alt="The MQTT packet list in dark mode with a CONNECT packet open, showing client ID, protocol MQTT 3.1.1, clean start, keep alive and a hex dump.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <p class="eyebrow">A closer look</p>
+        <h2>Native, fast and at home on your Mac.</h2>
+        <p class="sub">Written in SwiftUI on top of SwiftNIO. Light and dark mode, universal for Apple silicon and Intel, and no Electron.</p>
+        <div class="gallery" role="list">
+          <figure class="shot" role="listitem">
+            <img src="images/08-search.webp" width="1440" height="860" loading="lazy" alt="Searching for a term across HTTP bodies and MQTT payloads.">
+            <figcaption>One search box for headers, bodies, topics and payloads.</figcaption>
+          </figure>
+          <figure class="shot" role="listitem">
+            <img src="images/06-websocket.webp" width="1440" height="860" loading="lazy" alt="WebSocket text frames in both directions with the payload open in the inspector.">
+            <figcaption>WebSocket frames in both directions, decoded.</figcaption>
+          </figure>
+          <figure class="shot" role="listitem">
+            <img src="images/07-issues-pinned-host.webp" width="1440" height="860" loading="lazy" alt="The Issues list showing a failed request and a host that rejected the certificate, with a Bypass button.">
+            <figcaption>Failures and pinned hosts collected under Issues.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" class="section section-alt">
+      <div class="wrap">
+        <p class="eyebrow">Pricing</p>
+        <h2>Free to capture. Pay once for the power tools.</h2>
+        <p class="sub">Everything is free during the beta. Join the waitlist to lock in the early-bird price for Pro.</p>
+        <div class="grid pricing">
+          <article class="plan">
+            <h3>Free</h3>
+            <p class="price"><span class="amount">$0</span></p>
+            <p class="plan-note">Forever, for capturing and inspecting.</p>
+            <ul class="checks">
+              <li>HTTP, HTTPS, WebSocket and MQTT capture</li>
+              <li>Packet and topic views for MQTT</li>
+              <li>Full-text search</li>
+              <li>HAR and MQTT JSON Lines export</li>
+              <li>Keeps your 3 most recent sessions</li>
+            </ul>
+            <a class="btn btn-ghost btn-block" data-download href="#download">Download</a>
+          </article>
+          <article class="plan plan-pro">
+            <p class="badge">Early-bird pricing for the waitlist</p>
+            <h3>Pro</h3>
+            <p class="price"><span class="amount">$79</span><span class="per">one time</span></p>
+            <p class="plan-note">Includes 12 months of updates. Keep using your version forever.</p>
+            <ul class="checks">
+              <li>Everything in Free</li>
+              <li>Unlimited saved sessions</li>
+              <li>MQTT publish and replay <span class="soon">beta</span></li>
+              <li>Breakpoints <span class="soon">beta</span></li>
+              <li>Map and rewrite <span class="soon">beta</span></li>
+              <li>Scripting <span class="soon">beta</span></li>
+            </ul>
+            <a class="btn btn-primary btn-block" data-checkout href="#waitlist">Join the waitlist</a>
+          </article>
+        </div>
+        <p class="fine center">Features marked beta arrive during the beta period. Prices in USD; tax is calculated at checkout.</p>
+      </div>
+    </section>
+
+    <section id="faq" class="section">
+      <div class="wrap narrow">
+        <p class="eyebrow">FAQ</p>
+        <h2>Questions</h2>
+        <details>
+          <summary>Does my traffic leave my Mac?</summary>
+          <p>No. Captures are stored locally in a SQLite database on your Mac. The only network call the app makes on its own is checking your Pro license with the store, plus checking for updates.</p>
+        </details>
+        <details>
+          <summary>Why isn't it on the Mac App Store?</summary>
+          <p>A debugging proxy needs to run a local proxy, install a root certificate and talk to the iOS Simulator, which the App Store sandbox doesn't allow. Traffic Watcher is signed with a Developer ID and notarized by Apple, and it updates itself.</p>
+        </details>
+        <details>
+          <summary>How do I capture MQTT?</summary>
+          <p>Add your broker in Settings. Traffic Watcher listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy.</p>
+        </details>
+        <details>
+          <summary>Does it work with the iOS Simulator and real devices?</summary>
+          <p>Yes. The Simulator uses your Mac's proxy settings, and Settings can install the root certificate into a booted Simulator for you. For a physical device, set the Wi-Fi proxy to your Mac and trust the certificate on the device.</p>
+        </details>
+        <details>
+          <summary>What happens after my 12 months of updates?</summary>
+          <p>Pro keeps working forever on every version released within 12 months of your purchase. Renew if you want the newer ones. A license also keeps working offline for 30 days between checks.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="waitlist" class="section cta">
+      <div class="wrap narrow center">
+        <h2>Be first in line for Pro.</h2>
+        <p class="sub">Join the waitlist for release news and the early-bird price. No spam, one email when it matters.</p>
+        <form class="waitlist" data-waitlist hidden>
+          <label class="sr-only" for="email">Email address</label>
+          <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          <button class="btn btn-primary" type="submit">Join the waitlist</button>
+          <p class="form-status" role="status" aria-live="polite"></p>
+        </form>
+        <div class="waitlist-fallback" data-waitlist-fallback>
+          <a class="btn btn-ghost" href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases">Watch releases on GitHub</a>
+        </div>
+        <div id="download" class="download">
+          <a class="btn btn-primary" data-download href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases/latest">Download the beta for macOS</a>
+          <p class="fine">Free during the beta · macOS 14 or later</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <p>© 2026 Traffic Watcher</p>
+      <nav aria-label="Footer">
+        <a href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt">GitHub</a>
+        <a href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases">Release notes</a>
+        <a href="appcast.xml">Update feed</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

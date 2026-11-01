@@ -66,3 +66,7 @@ The script takes its settings from environment variables (version, signing ident
 Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurchaseURL` and `TWReleaseDate` (`yyyy-MM-dd`) from Info.plist. Without them, as with `swift run`, Pro activation is off.
 
 `TrafficWatcher --screenshots <dir>` loads sample traffic and writes PNGs of the main screens. CI runs it on every pull request and uploads the result as the `screenshots` artifact.
+
+## Landing page
+
+`site/` is the static landing page, published to GitHub Pages (the `gh-pages` branch, next to the Sparkle appcast) by `.github/workflows/site.yml` on every push to `main` that touches it. Download, checkout and waitlist links are set in `site/config.js`. Preview locally with `python3 -m http.server -d site`.
