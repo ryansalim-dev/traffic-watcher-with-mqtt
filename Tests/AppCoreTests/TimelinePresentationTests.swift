@@ -103,3 +103,45 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(ActivityHistogram.counts(of: times, buckets: 0, bucketLength: 1, endingAt: end), [])
     }
 }
+
+final class TopicHistoryTests: XCTestCase {
+    func testHistoryIsCappedAndNumericFieldsChart() {
+        var tree = TopicTree()
+        let start = Date(timeIntervalSince1970: 0)
+        for index in 0..<(TopicNode.historyLimit + 5) {
+            let payload = #"{"celsius":\#(20 + Double(index % 3)),"label":"k","on":true}"#
+            tree.record(topic: "home/kitchen/temperature", payload: Array(payload.utf8), retained: false,
+                        at: start.addingTimeInterval(Double(index)))
+        }
+        let node = tree.node(for: "home/kitchen/temperature")
+        XCTAssertEqual(node?.history.count, TopicNode.historyLimit)
+        XCTAssertEqual(node?.history.first?.date, start.addingTimeInterval(5))
+        XCTAssertEqual(node?.messageCount, TopicNode.historyLimit + 5)
+
+        let series = NumericSeries.series(from: node?.history ?? [])
+        XCTAssertEqual(series.map(\.field), ["celsius"])
+        XCTAssertEqual(series.first?.minimum, 20)
+        XCTAssertEqual(series.first?.maximum, 22)
+    }
+
+    func testBareNumbersAndNonNumericPayloads() {
+        let samples = ["412", "415", "online", ""].enumerated().map {
+            TopicSample(date: Date(timeIntervalSince1970: Double($0.offset)), payload: Array($0.element.utf8))
+        }
+        XCTAssertEqual(NumericSeries.series(from: samples).map(\.field), ["value"])
+        XCTAssertEqual(NumericSeries.series(from: samples).first?.latest, 415)
+        XCTAssertEqual(NumericSeries.series(from: [samples[2]]), [])
+    }
+}
+
+final class SampleReadingsTests: XCTestCase {
+    func testTemperatureReadingsChartCelsiusAndHumidity() {
+        var tree = TopicTree()
+        for event in SampleTraffic.temperatureReadings(count: 10) {
+            if case .mqtt(let capture) = event { tree.record(capture.event, at: capture.timestamp) }
+        }
+        let node = tree.node(for: "home/kitchen/temperature")
+        XCTAssertEqual(node?.messageCount, 10)
+        XCTAssertEqual(NumericSeries.series(from: node?.history ?? []).map(\.field), ["celsius", "humidity"])
+    }
+}

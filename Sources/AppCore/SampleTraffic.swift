@@ -82,6 +82,25 @@ public enum SampleTraffic {
         return events
     }
 
+    /// A minute of kitchen temperature readings, one every few seconds, for the topic chart.
+    public static func temperatureReadings(count: Int = 24, endingAt end: Date = Date()) -> [CaptureEvent] {
+        var session = MQTTSession()
+        let connection = UUID()
+        var events: [CaptureEvent] = []
+        _ = try? session.receive(MQTTBytes.connect(clientID: "thermo-01", keepAlive: 60), from: .clientToBroker)
+        for index in 0..<count {
+            let celsius = 21.2 + 0.6 * sin(Double(index) / 3.5) + 0.04 * Double(index % 4)
+            let humidity = 0.42 + 0.03 * cos(Double(index) / 4)
+            let payload = String(format: #"{"celsius":%.1f,"humidity":%.2f}"#, celsius, humidity)
+            let bytes = MQTTBytes.publish(topic: "home/kitchen/temperature", payload: Array(payload.utf8), retain: false)
+            let date = end.addingTimeInterval(-Double(count - index) * 2.5)
+            for event in (try? session.receive(bytes, from: .clientToBroker)) ?? [] {
+                events.append(.mqtt(MQTTCaptureEvent(connectionID: connection, timestamp: date, broker: "broker.example.com:1883", event: event)))
+            }
+        }
+        return events
+    }
+
     private static func http(at date: Date, duration: TimeInterval, method: String, url: String, status: Int?,
                              contentType: String?, requestBody: String = "", body: String = "",
                              bodyBytes: [UInt8]? = nil) -> HTTPExchange {
