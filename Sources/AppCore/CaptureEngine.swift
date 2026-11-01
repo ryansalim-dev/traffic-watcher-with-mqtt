@@ -32,10 +32,34 @@ public struct EngineConfiguration: Codable, Equatable, Sendable {
     public var decryptHTTPS = true
     public var bypassHosts: [String] = []
     public var forwarders: [ForwarderConfiguration] = []
+    /// Point this Mac's system HTTP/HTTPS proxy at Traffic Watcher while capturing (needs the helper).
+    public var setSystemProxy = false
 
     public init() {}
 
     var listenHost: String { allowRemoteDevices ? "0.0.0.0" : "127.0.0.1" }
+
+    private enum CodingKeys: String, CodingKey {
+        case proxyPort, allowRemoteDevices, decryptHTTPS, bypassHosts, forwarders, setSystemProxy
+    }
+
+    /// Missing keys keep their defaults, so settings saved by older versions still load.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        proxyPort = try container.decodeIfPresent(Int.self, forKey: .proxyPort) ?? proxyPort
+        allowRemoteDevices = try container.decodeIfPresent(Bool.self, forKey: .allowRemoteDevices) ?? allowRemoteDevices
+        decryptHTTPS = try container.decodeIfPresent(Bool.self, forKey: .decryptHTTPS) ?? decryptHTTPS
+        bypassHosts = try container.decodeIfPresent([String].self, forKey: .bypassHosts) ?? bypassHosts
+        forwarders = try container.decodeIfPresent([ForwarderConfiguration].self, forKey: .forwarders) ?? forwarders
+        setSystemProxy = try container.decodeIfPresent(Bool.self, forKey: .setSystemProxy) ?? setSystemProxy
+    }
+}
+
+/// Switches the Mac's system proxy to the capture proxy and back. The app implements it with the
+/// privileged helper; tests use a fake.
+public protocol SystemProxyControlling: Sendable {
+    func enable(host: String, port: Int, bypass: [String]) async throws
+    func disable() async throws
 }
 
 /// Keeps the local root CA in a directory (`ca.pem`, `ca-key.pem`, key file mode 0600) and

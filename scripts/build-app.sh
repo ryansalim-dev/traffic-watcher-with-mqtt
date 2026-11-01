@@ -6,7 +6,7 @@
 #
 #   VERSION            marketing version, e.g. 1.0.0        (default: latest v* tag, or 0.0.0)
 #   BUILD_NUMBER       CFBundleVersion, must always increase  (default: git commit count)
-#   BUNDLE_ID          bundle identifier                      (default: com.ryansalim.TrafficWatcher)
+#   BUNDLE_ID          bundle identifier; must match HelperIdentity.appBundleIdentifier (default: com.ryansalim.TrafficWatcher)
 #   ARCHS              architectures                          (default: "arm64 x86_64")
 #   RELEASE_DATE       yyyy-MM-dd, starts the license update window check (default: today, UTC)
 #   SIGN_IDENTITY      codesign identity; "-" signs ad hoc    (default: -)
@@ -37,17 +37,22 @@ echo "==> Building Traffic Watcher $VERSION ($BUILD_NUMBER) for $ARCHS"
 # One native build per architecture, joined with lipo. (`swift build --arch a --arch b` switches to
 # the Xcode build system, which fails on this package.)
 BINARIES=()
+HELPERS=()
 for arch in $ARCHS; do
   triple="$arch-apple-macosx14.0"
   swift build -c release --product TrafficWatcher --triple "$triple"
+  swift build -c release --product TrafficWatcherHelper --triple "$triple"
   BIN=$(swift build -c release --triple "$triple" --show-bin-path)
   BINARIES+=("$BIN/TrafficWatcher")
+  HELPERS+=("$BIN/TrafficWatcherHelper")
 done
 
 echo "==> Assembling $APP"
 rm -rf "$APP" "$ZIP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchDaemons"
 lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/TrafficWatcher"
+lipo -create "${HELPERS[@]}" -output "$APP/Contents/MacOS/TrafficWatcherHelper"
+cp Packaging/com.ryansalim.TrafficWatcher.Helper.plist "$APP/Contents/Library/LaunchDaemons/"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 # SwiftPM resource bundles, if any target gains resources later.
 find "$BIN" -maxdepth 1 -name '*.bundle' -exec ditto {} "$APP/Contents/Resources/" \; 2>/dev/null || true
@@ -83,6 +88,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$SPARKLE/Autoupdate"
 "${SIGN[@]}" "$SPARKLE/Updater.app"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+"${SIGN[@]}" --identifier com.ryansalim.TrafficWatcher.Helper "$APP/Contents/MacOS/TrafficWatcherHelper"
 "${SIGN[@]}" "$APP"
 codesign --verify --deep --strict --verbose=1 "$APP"
 

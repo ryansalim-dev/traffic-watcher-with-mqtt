@@ -54,6 +54,7 @@ enum Screenshots {
                                           customerName: "Ryan", customerEmail: "ryan@example.com",
                                           purchasedAt: Date().addingTimeInterval(-40 * 86_400), lastValidatedAt: Date().addingTimeInterval(-3_600)))
         let proLicense = LicenseManager(configuration: licenseConfiguration, storage: proStorage)
+        let helper = SystemProxyHelper()
 
         func row(_ match: (TrafficRow) -> Bool) -> TrafficRow.ID? { model.rows.first(where: match)?.id }
         let size = NSSize(width: 1440, height: 860)
@@ -90,12 +91,12 @@ enum Screenshots {
         let settingsSize = NSSize(width: 560, height: 560)
         let tabs: [(SettingsView.Tab, String)] = [(.proxy, "09-settings-proxy"), (.mqtt, "10-settings-mqtt"), (.certificate, "11-settings-certificate")]
         for (tab, name) in tabs {
-            try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, tab: tab),
+            try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, helper: helper, tab: tab),
                             size: settingsSize, dark: false, name: name, into: directory)
         }
-        try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, tab: .license),
+        try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, helper: helper, tab: .license),
                         size: settingsSize, dark: false, name: "12-settings-license-free", into: directory)
-        try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, tab: .license),
+        try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .license),
                         size: settingsSize, dark: true, name: "13-settings-license-pro-dark", into: directory)
         await model.stopCapture()
     }

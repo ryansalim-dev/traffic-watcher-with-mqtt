@@ -20,6 +20,9 @@ jobs:
         run: |
           plutil -p dist/TrafficWatcher.app/Contents/Info.plist
           lipo -archs dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher
+          lipo -archs dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcherHelper
+          plutil -lint dist/TrafficWatcher.app/Contents/Library/LaunchDaemons/com.ryansalim.TrafficWatcher.Helper.plist
+          codesign -dv dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcherHelper 2>&1 | grep Identifier=com.ryansalim.TrafficWatcher.Helper
           otool -l dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher | grep -A2 LC_RPATH
       - name: Screenshots (from the bundle, so Sparkle and rpath load as in a release)
         timeout-minutes: 6

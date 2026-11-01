@@ -33,7 +33,7 @@ struct TrafficWatcherApp: App {
     var body: some Scene {
         WindowGroup("Traffic Watcher") {
             switch setup {
-            case .ready(let model, let storage, let license):
+            case .ready(let model, let storage, let license, _):
                 ContentView(model: model, certificates: storage, license: license)
                     .frame(minWidth: 1000, minHeight: 600)
             case .failed(let message):
@@ -47,8 +47,8 @@ struct TrafficWatcherApp: App {
         }
 
         Settings {
-            if case .ready(let model, let storage, let license) = setup {
-                SettingsView(model: model, certificates: storage, license: license)
+            if case .ready(let model, let storage, let license, let helper) = setup {
+                SettingsView(model: model, certificates: storage, license: license, helper: helper)
             }
         }
     }
@@ -56,13 +56,13 @@ struct TrafficWatcherApp: App {
 
 /// Builds the store, certificate authority and engine from the Application Support folder.
 enum AppSetup {
-    case ready(CaptureViewModel, CertificateStorage, LicenseManager)
+    case ready(CaptureViewModel, CertificateStorage, LicenseManager, SystemProxyHelper)
     case failed(String)
 
     private static let configurationKey = "engineConfiguration"
 
     var model: CaptureViewModel? {
-        if case .ready(let model, _, _) = self { model } else { nil }
+        if case .ready(let model, _, _, _) = self { model } else { nil }
     }
 
     @MainActor
@@ -89,6 +89,7 @@ enum AppSetup {
                 store: store,
                 engine: CaptureEngine(authority: authority),
                 configuration: configuration,
+                systemProxy: HelperConnection(),
                 saveConfiguration: { configuration in
                     if let data = try? JSONEncoder().encode(configuration) {
                         UserDefaults.standard.set(data, forKey: configurationKey)
@@ -99,7 +100,7 @@ enum AppSetup {
                 configuration: LicenseConfiguration(infoDictionary: Bundle.main.infoDictionary ?? [:]),
                 storage: KeychainLicenseStorage()
             )
-            return .ready(model, storage, license)
+            return .ready(model, storage, license, SystemProxyHelper())
         } catch {
             return .failed(String(describing: error))
         }

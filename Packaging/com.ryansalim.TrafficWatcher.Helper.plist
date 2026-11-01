@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd job for the privileged helper. The app registers it with
+     SMAppService.daemon(plistName:); build-app.sh copies it to Contents/Library/LaunchDaemons. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.ryansalim.TrafficWatcher.Helper</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/TrafficWatcherHelper</string>
+	<key>MachServices</key>
+	<dict>
+		<key>com.ryansalim.TrafficWatcher.Helper</key>
+		<true/>
+	</dict>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.ryansalim.TrafficWatcher</string>
+	</array>
+	<!-- Runs at boot so a proxy left on by a crash or power loss is switched back off. -->
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>

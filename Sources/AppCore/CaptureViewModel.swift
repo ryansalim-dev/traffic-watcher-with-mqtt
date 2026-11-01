@@ -137,6 +137,8 @@ public final class CaptureViewModel {
     public private(set) var isCapturing = false
     public private(set) var proxyPort: Int?
     public private(set) var lastError: String?
+    /// True while this Mac's system proxy points at the capture proxy.
+    public private(set) var systemProxyActive = false
     /// Hosts whose clients rejected our certificate and are not bypassed yet.
     public private(set) var pinnedHosts: [String] = []
 
@@ -157,15 +159,18 @@ public final class CaptureViewModel {
     public let store: CaptureStore
     private let engine: CaptureEngine?
     private let saveConfiguration: ((EngineConfiguration) -> Void)?
+    private let systemProxy: SystemProxyControlling?
     private var consumer: Task<Void, Never>?
 
     /// - Parameters:
     ///   - engine: nil for previews and tests that feed events through `ingest`.
     ///   - saveConfiguration: called whenever the configuration changes, to persist it.
     public init(store: CaptureStore, engine: CaptureEngine?, configuration: EngineConfiguration = .init(),
+                systemProxy: SystemProxyControlling? = nil,
                 saveConfiguration: ((EngineConfiguration) -> Void)? = nil) {
         self.store = store
         self.engine = engine
+        self.systemProxy = systemProxy
         self.configuration = configuration
         self.saveConfiguration = saveConfiguration
         if let engine {
@@ -187,9 +192,11 @@ public final class CaptureViewModel {
     public func startCapture() async {
         guard let engine else { return }
         do {
-            proxyPort = try await engine.start(configuration)
+            let port = try await engine.start(configuration)
+            proxyPort = port
             isCapturing = true
             lastError = nil
+            await updateSystemProxy(port: port)
         } catch {
             isCapturing = false
             lastError = "Could not start capture: \(error)"
@@ -197,9 +204,28 @@ public final class CaptureViewModel {
     }
 
     public func stopCapture() async {
+        await updateSystemProxy(port: nil)
         try? await engine?.stop()
         isCapturing = false
         proxyPort = nil
+    }
+
+    /// Turns the system proxy on for `port` when the configuration asks for it, or off when `port` is nil.
+    func updateSystemProxy(port: Int?) async {
+        guard let systemProxy else { return }
+        do {
+            if let port, configuration.setSystemProxy {
+                try await systemProxy.enable(host: "127.0.0.1", port: port, bypass: configuration.bypassHosts)
+                systemProxyActive = true
+            } else if systemProxyActive {
+                try await systemProxy.disable()
+                systemProxyActive = false
+            }
+        } catch {
+            lastError = port == nil
+                ? "Couldn't switch the system proxy back: \(error). Check System Settings › Network › Proxies."
+                : "Capture started, but the system proxy couldn't be set: \(error)"
+        }
     }
 
     /// Starts a fresh session and clears the timeline. Earlier sessions stay in the store.

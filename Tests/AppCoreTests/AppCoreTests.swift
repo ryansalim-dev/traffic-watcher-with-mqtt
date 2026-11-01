@@ -389,3 +389,68 @@ final class SessionLimitTests: XCTestCase {
         XCTAssertEqual(try store.sessions().count, 4)
     }
 }
+
+final class SystemProxyTests: XCTestCase {
+    private final class FakeProxy: SystemProxyControlling, @unchecked Sendable {
+        var calls: [String] = []
+        var failEnable = false
+        func enable(host: String, port: Int, bypass: [String]) async throws {
+            calls.append("enable \(host):\(port) \(bypass)")
+            if failEnable { throw CocoaError(.featureUnsupported) }
+        }
+        func disable() async throws { calls.append("disable") }
+    }
+
+    @MainActor
+    private func makeModel(_ proxy: FakeProxy, setSystemProxy: Bool) throws -> (CaptureViewModel, URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SysProxy-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var configuration = EngineConfiguration()
+        configuration.proxyPort = 0
+        configuration.setSystemProxy = setSystemProxy
+        configuration.bypassHosts = ["pinned.example"]
+        let model = CaptureViewModel(store: try CaptureStore(path: directory.appendingPathComponent("db.sqlite").path),
+                                     engine: CaptureEngine(authority: try CertificateAuthority.generate(), threads: 1),
+                                     configuration: configuration, systemProxy: proxy)
+        return (model, directory)
+    }
+
+    @MainActor
+    func testSystemProxyFollowsCapture() async throws {
+        let proxy = FakeProxy()
+        let (model, directory) = try makeModel(proxy, setSystemProxy: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await model.startCapture()
+        let port = try XCTUnwrap(model.proxyPort)
+        XCTAssertTrue(model.systemProxyActive)
+        await model.stopCapture()
+        XCTAssertFalse(model.systemProxyActive)
+        XCTAssertEqual(proxy.calls, ["enable 127.0.0.1:\(port) [\"pinned.example\"]", "disable"])
+    }
+
+    @MainActor
+    func testSystemProxyOffByDefaultAndFailuresDontStopCapture() async throws {
+        let proxy = FakeProxy()
+        let (model, directory) = try makeModel(proxy, setSystemProxy: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await model.startCapture()
+        await model.stopCapture()
+        XCTAssertEqual(proxy.calls, [])
+
+        model.configuration.setSystemProxy = true
+        proxy.failEnable = true
+        await model.startCapture()
+        XCTAssertTrue(model.isCapturing)
+        XCTAssertFalse(model.systemProxyActive)
+        XCTAssertNotNil(model.lastError)
+        await model.stopCapture()
+        XCTAssertEqual(proxy.calls.count, 1) // nothing to disable
+    }
+
+    func testOldSavedConfigurationStillDecodes() throws {
+        let saved = #"{"proxyPort":8888,"allowRemoteDevices":true,"decryptHTTPS":false,"bypassHosts":["a.example"],"forwarders":[]}"#
+        let configuration = try JSONDecoder().decode(EngineConfiguration.self, from: Data(saved.utf8))
+        XCTAssertEqual(configuration.proxyPort, 8888)
+        XCTAssertFalse(configuration.setSystemProxy)
+    }
+}
