@@ -363,7 +363,7 @@ struct ToolbarSearchField: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: 240, height: 28)
+        .frame(width: 220, height: 28)
         .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -717,7 +717,7 @@ struct TrafficTimeline: View {
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
-                .width(min: 200, ideal: 360)
+                .width(min: 180, ideal: 250)
                 .customizationID("hostPath")
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
