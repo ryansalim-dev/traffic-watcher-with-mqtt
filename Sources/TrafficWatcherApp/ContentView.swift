@@ -7,6 +7,7 @@ struct ContentView: View {
     let certificates: CertificateStorage
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
+    @State var showInspector = true
 
     enum MQTTMode: String, CaseIterable, Identifiable {
         case packets = "Packets", topics = "Topics"
@@ -19,7 +20,7 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(model: model)
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220)
-        } content: {
+        } detail: {
             Group {
                 if showsTopics {
                     TopicTreeView(tree: model.topicTree, selection: $selectedTopic)
@@ -27,7 +28,7 @@ struct ContentView: View {
                     TrafficTimeline(model: model)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 420, ideal: 680)
+            .frame(minWidth: 420)
             .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search URLs, headers, bodies, topics, payloads")
             .toolbar {
                 if model.section == .mqtt {
@@ -39,15 +40,27 @@ struct ContentView: View {
                     }
                 }
             }
-        } detail: {
-            Group {
-                if showsTopics {
-                    TopicDetailView(tree: model.topicTree, topic: selectedTopic)
-                } else {
-                    InspectorView(model: model)
+            .inspector(isPresented: $showInspector) {
+                Group {
+                    if showsTopics {
+                        TopicDetailView(tree: model.topicTree, topic: selectedTopic)
+                    } else {
+                        InspectorView(model: model)
+                    }
+                }
+                .inspectorColumnWidth(min: 320, ideal: 460, max: 800)
+                .toolbar {
+                    ToolbarItem {
+                        Button {
+                            showInspector.toggle()
+                        } label: {
+                            Label("Inspector", systemImage: "sidebar.trailing")
+                        }
+                        .help("Show or hide the inspector (⌥⌘I)")
+                        .keyboardShortcut("i", modifiers: [.command, .option])
+                    }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 340, ideal: 460)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
