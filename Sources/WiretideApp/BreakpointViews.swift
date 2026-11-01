@@ -50,102 +50,134 @@ struct BreakpointEditor: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                if isRequest {
-                    HStack(spacing: 8) {
-                        TextField("Method", text: $method)
-                            .frame(width: 90)
-                        TextField("URL", text: $url)
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if isRequest {
+                        field("Method") {
+                            TextField("Method", text: $method).labelsHidden()
+                        }
+                        field("URL") {
+                            TextField("URL", text: $url, axis: .vertical).labelsHidden().lineLimit(2...4)
+                        }
+                    } else {
+                        field("Status") {
+                            HStack(spacing: 8) {
+                                TextField("Status", value: $status, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .frame(width: 70)
+                                Text(Self.reasonPhrase(status))
+                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .foregroundStyle(Theme.color(forStatus: status))
+                            }
+                        }
                     }
-                    .font(.body.monospaced())
-                    .textFieldStyle(.roundedBorder)
-                } else {
-                    HStack(spacing: 8) {
-                        Text("Status").foregroundStyle(.secondary)
-                        TextField("Status", value: $status, format: .number.grouping(.never))
-                            .frame(width: 70)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.body.monospaced())
-                        Text(Self.reasonPhrase(status))
-                            .foregroundStyle(.secondary)
+                    field("Headers · one per line") {
+                        TextEditor(text: $headersText)
+                            .font(Theme.mono)
+                            .scrollContentBackground(.hidden)
+                            .padding(6)
+                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12.5, design: .monospaced))
+                .padding(16)
+                .frame(width: 340)
+                .frame(maxHeight: .infinity, alignment: .top)
+
+                Divider()
+
+                VStack(spacing: 0) {
+                    HStack {
+                        CapsLabel("Body")
                         Spacer()
+                        Text(Formatting.byteCount(currentBody.count)).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    Divider()
+                    if let binaryBody {
+                        Text("Binary body (\(Formatting.byteCount(binaryBody.count))). It is passed on unchanged.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        TextEditor(text: $bodyText)
+                            .font(.system(size: 13, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                            .padding(10)
                     }
                 }
-                Text("Headers").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                TextEditor(text: $headersText)
-                    .font(.callout.monospaced())
-                    .frame(minHeight: 110, idealHeight: 150)
-                    .border(Color(nsColor: .separatorColor))
-                HStack {
-                    Text("Body").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(Formatting.byteCount(currentBody.count)).font(.caption).foregroundStyle(.tertiary)
-                }
-                if let binaryBody {
-                    Text("Binary body (\(Formatting.byteCount(binaryBody.count))). It is passed on unchanged.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 120)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .border(Color(nsColor: .separatorColor))
-                } else {
-                    TextEditor(text: $bodyText)
-                        .font(.callout.monospaced())
-                        .frame(minHeight: 160)
-                        .border(Color(nsColor: .separatorColor))
-                }
+                .background(Color(nsColor: .textBackgroundColor))
             }
-            .padding(16)
             Divider()
             footer
         }
-        .frame(minWidth: 720, idealWidth: 760, minHeight: 560, idealHeight: 620)
+        .frame(minWidth: 820, idealWidth: 880, minHeight: 560, idealHeight: 620)
+        .tint(Theme.accent)
         .onAppear(perform: load)
         .interactiveDismissDisabled()
     }
 
+    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CapsLabel(label)
+            content()
+        }
+    }
+
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "pause.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isRequest ? "Request paused before it was sent" : "Response paused before the app sees it")
-                    .font(.headline)
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "pause.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.warning)
+                .frame(width: 30, height: 30)
+                .background(Theme.warning.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(isRequest ? "Request paused before it was sent" : "Response paused before the app sees it")
+                        .font(.system(size: 14, weight: .semibold))
+                    TypePill(text: item.request.method.uppercased(),
+                             color: Theme.color(forPill: item.request.method.uppercased(), kind: .http), fixedWidth: nil)
+                }
                 Text(item.title)
-                    .font(.callout.monospaced())
+                    .font(Theme.monoSmall)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("Paused \(item.pausedAt.formatted(date: .omitted, time: .standard)). It continues unchanged after \(minutes) if left alone.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Text("Paused at \(item.pausedAt.formatted(date: .omitted, time: .standard)). It continues unchanged after \(minutes) if left alone.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             let waiting = center.paused.count - 1
             if waiting > 0 {
                 Text("\(waiting) more waiting")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.orange)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .padding(.horizontal, 9)
+                    .frame(height: 22)
+                    .background(Theme.warning.opacity(0.15), in: Capsule())
+                    .foregroundStyle(Theme.warning)
             }
         }
         .padding(16)
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 10) {
             Button("Abort", role: .destructive) { center.abort(item.id) }
                 .help(isRequest ? "Don't send it; the app gets a 502 error" : "Drop the response; the app gets a 502 error")
+            Text("The app gets a 502").font(.system(size: 11.5)).foregroundStyle(.tertiary)
             Spacer()
-            Button("Reset") { load() }
+            Button("Reset Edits") { load() }
             Button("Continue Unchanged") { center.resumeUnchanged(item.id) }
-            Button(isRequest ? "Send" : "Return to App") { resume() }
+            Button(isRequest ? "Send Edited" : "Return to App") { resume() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     private var minutes: String {
@@ -285,7 +317,7 @@ struct ProNotice: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "lock.fill").foregroundStyle(.orange)
+            Image(systemName: "lock.fill").foregroundStyle(Theme.warning)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(feature) is part of Wiretide Pro").font(.callout.weight(.semibold))
                 Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -294,7 +326,7 @@ struct ProNotice: View {
             if showsUpgrade { SettingsLink { Text("Upgrade…") } }
         }
         .padding(10)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 #endif

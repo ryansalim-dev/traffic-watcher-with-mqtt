@@ -497,6 +497,8 @@ struct LicenseChip: View {
 struct TrafficTimeline: View {
     @Bindable var model: CaptureViewModel
     let density: RowDensity
+    /// Code and Duration only mean something for HTTP, so they are hidden in the MQTT section.
+    @State private var columns = TableColumnCustomization<TrafficRow>()
 
     var body: some View {
         let rows = model.visibleRows
@@ -514,33 +516,38 @@ struct TrafficTimeline: View {
             }
         } else {
             let longest = rows.lazy.compactMap(\.duration).max() ?? 1
-            Table(rows, selection: $model.selection) {
+            Table(rows, selection: $model.selection, columnCustomization: $columns) {
                 TableColumn("") { row in
                     StatusDot(color: Theme.color(for: row.tone))
                         .frame(maxWidth: .infinity)
                         .frame(height: density.contentHeight)
                 }
                 .width(12)
+                .customizationID("status")
                 TableColumn("Type") { row in
                     TypePill(text: row.pill, color: Theme.color(forPill: row.pill, kind: row.kind))
                 }
                 .width(64)
+                .customizationID("type")
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
                 .width(min: 200, ideal: 360)
+                .customizationID("hostPath")
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.color(forStatus: row.statusCode))
                 }
                 .width(40)
+                .customizationID("code")
                 TableColumn("Duration") { row in
                     if let duration = row.duration {
                         DurationCell(duration: duration, longest: longest)
                     }
                 }
                 .width(120)
+                .customizationID("duration")
                 TableColumn("Size") { row in
                     Text(row.size > 0 ? Formatting.byteCount(row.size) : "—")
                         .monospacedDigit()
@@ -548,6 +555,7 @@ struct TrafficTimeline: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .width(72)
+                .customizationID("size")
                 TableColumn("Time") { row in
                     Text(row.time, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
                         .secondFraction(.fractional(3)))
@@ -556,8 +564,14 @@ struct TrafficTimeline: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .width(100)
+                .customizationID("time")
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
+            .onChange(of: model.section, initial: true) {
+                let visibility: Visibility = model.section == .mqtt ? .hidden : .automatic
+                columns[visibility: "code"] = visibility
+                columns[visibility: "duration"] = visibility
+            }
             .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in
                 if let id = ids.first, let row = model.rows.first(where: { $0.id == id }) {
                     TimelineRowMenu(model: model, row: row)
@@ -788,119 +802,6 @@ enum BreakpointLabel {
         let path = withoutScheme.firstIndex(of: "/").map { String(withoutScheme[$0...]) } ?? "/"
         let trimmed = path.split(separator: "?").first.map(String.init) ?? path
         return trimmed.count > 40 ? "…" + trimmed.suffix(39) : trimmed
-    }
-}
-
-/// The MQTT topics seen so far as an outline, expanded by default.
-struct TopicTreeView: View {
-    let tree: TopicTree
-    @Binding var selection: TopicNode.ID?
-    @State private var collapsed: Set<TopicNode.ID> = []
-
-    var body: some View {
-        if tree.roots.isEmpty {
-            ContentUnavailableView("No topics yet", systemImage: "point.3.connected.trianglepath.dotted",
-                                   description: Text("Topics appear here as PUBLISH packets are captured."))
-        } else {
-            List(selection: $selection) {
-                ForEach(tree.roots) { TopicBranch(node: $0, collapsed: $collapsed) }
-            }
-        }
-    }
-}
-
-struct TopicBranch: View {
-    let node: TopicNode
-    @Binding var collapsed: Set<TopicNode.ID>
-
-    var body: some View {
-        if node.children.isEmpty {
-            TopicLabel(node: node).tag(node.id)
-        } else {
-            DisclosureGroup(isExpanded: Binding(
-                get: { !collapsed.contains(node.id) },
-                set: { expanded in
-                    if expanded { collapsed.remove(node.id) } else { collapsed.insert(node.id) }
-                }
-            )) {
-                ForEach(node.children) { TopicBranch(node: $0, collapsed: $collapsed) }
-            } label: {
-                TopicLabel(node: node)
-            }
-            .tag(node.id)
-        }
-    }
-}
-
-struct TopicLabel: View {
-    let node: TopicNode
-
-    var body: some View {
-        HStack {
-            Text(node.name)
-            if node.retained {
-                Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).help("Retained")
-            }
-            Spacer()
-            if let payload = node.lastPayload, let text = String(bytes: payload.prefix(40), encoding: .utf8) {
-                Text(text).lineLimit(1).foregroundStyle(.secondary).font(.callout.monospaced())
-            }
-            Text("\(node.totalCount)")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 24, alignment: .trailing)
-        }
-    }
-}
-
-/// Inspector for the selected topic: counts, retained flag and the latest payload.
-struct TopicDetailView: View {
-    let tree: TopicTree
-    let topic: TopicNode.ID?
-    var onPublish: ((String) -> Void)?
-
-    var body: some View {
-        if let topic, let node = tree.node(for: topic) {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(node.id).font(.headline.monospaced()).textSelection(.enabled)
-                        Spacer()
-                        if let onPublish {
-                            Button {
-                                onPublish(node.id)
-                            } label: {
-                                Label("Publish…", systemImage: "paperplane")
-                            }
-                            .help("Send a message to this topic (Pro)")
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        Text("\(node.messageCount) messages here, \(node.totalCount) including subtopics")
-                        if node.retained { Label("Retained", systemImage: "pin.fill") }
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    if let updated = node.lastUpdated {
-                        Text("Last message \(updated.formatted(date: .omitted, time: .standard))")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(12)
-                Divider()
-                if let payload = node.lastPayload {
-                    BodyView(bytes: payload, contentType: nil)
-                } else {
-                    Text("Nothing has been published to this exact topic yet.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        } else {
-            ContentUnavailableView("No topic selected", systemImage: "point.3.connected.trianglepath.dotted",
-                                   description: Text("Select a topic to see its latest payload."))
-        }
     }
 }
 #endif

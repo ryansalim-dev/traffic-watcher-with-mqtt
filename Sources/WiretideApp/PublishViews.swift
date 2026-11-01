@@ -11,123 +11,177 @@ struct MQTTComposerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Form {
-                if !composer.isAllowed {
-                    ProNotice(feature: "MQTT publish and replay", detail: "You can fill this in now; sending needs a Pro license.")
-                }
-                Section("Broker") {
-                    HStack {
-                        TextField("Host", text: $composer.target.host, prompt: Text("broker.example.com"))
-                        TextField("Port", value: $composer.target.port, format: .number.grouping(.never))
-                            .frame(width: 110)
-                    }
-                    Picker("MQTT version", selection: $composer.target.version) {
-                        Text("3.1.1").tag(MQTTVersion.v3_1_1)
-                        Text("5.0").tag(MQTTVersion.v5)
-                    }
-                    .pickerStyle(.segmented)
-                    Toggle("TLS", isOn: $composer.target.useTLS)
-                    if composer.target.useTLS {
-                        Toggle("Verify the broker's certificate", isOn: $composer.target.verifyCertificate)
-                    }
-                    TextField("Client ID", text: $composer.target.clientIdentifier, prompt: Text("Generated"))
-                    TextField("User name", text: optional(\.username), prompt: Text("None"))
-                    SecureField("Password", text: optional(\.password), prompt: Text("None"))
-                }
-                Section("Message") {
-                    TextField("Topic", text: $composer.topic, prompt: Text("home/kitchen/light/set"))
-                        .font(.body.monospaced())
-                    Picker("QoS", selection: $composer.qos) {
-                        Text("0 · at most once").tag(MQTTQoS.atMostOnce)
-                        Text("1 · at least once").tag(MQTTQoS.atLeastOnce)
-                        Text("2 · exactly once").tag(MQTTQoS.exactlyOnce)
-                    }
-                    Toggle("Retain", isOn: $composer.retain)
-                    if composer.target.version == .v5 {
-                        TextField("Content type", text: $composer.contentType, prompt: Text("application/json"))
-                        ForEach(composer.userProperties.indices, id: \.self) { index in
-                            HStack {
-                                TextField("Key", text: $composer.userProperties[index].key, prompt: Text("Key")).labelsHidden()
-                                TextField("Value", text: $composer.userProperties[index].value, prompt: Text("Value")).labelsHidden()
-                                Button {
-                                    composer.userProperties.remove(at: index)
-                                } label: {
-                                    Image(systemName: "minus.circle")
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                        Button("Add User Property") { composer.userProperties.append(.init(key: "", value: "")) }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Payload")
-                            Spacer()
-                            if let payload = composer.payload {
-                                Text(Formatting.byteCount(payload.count)).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Picker("Format", selection: $composer.payloadFormat) {
-                                ForEach(MQTTComposer.PayloadFormat.allCases) { Text($0.rawValue).tag($0) }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .frame(width: 120)
-                        }
-                        TextEditor(text: $composer.payloadText)
-                            .font(.callout.monospaced())
-                            .frame(minHeight: 110)
-                            .border(Color(nsColor: .separatorColor))
-                    }
-                }
-                Section {
-                    Stepper(value: $composer.repeatCount, in: 1...10_000) {
-                        HStack {
-                            Text("Send")
-                            TextField("Times", value: $composer.repeatCount, format: .number)
-                                .labelsHidden()
-                                .frame(width: 70)
-                                .multilineTextAlignment(.trailing)
-                            Text(composer.repeatCount == 1 ? "time" : "times")
-                        }
-                    }
-                    if composer.repeatCount > 1 {
-                        HStack {
-                            Text("Wait between messages")
-                            Spacer()
-                            TextField("Interval", value: $composer.intervalMilliseconds, format: .number)
-                                .labelsHidden()
-                                .frame(width: 80)
-                                .multilineTextAlignment(.trailing)
-                            Text("ms")
-                        }
-                    }
-                } header: {
-                    Text("Repeat")
-                } footer: {
-                    Text("Everything sent here also appears in the MQTT timeline.").foregroundStyle(.secondary)
-                }
-            }
-            .formStyle(.grouped)
-
+            header
             Divider()
+            HStack(spacing: 0) {
+                settings
+                    .frame(width: 330)
+                Divider()
+                payloadEditor
+            }
+            Divider()
+            footer
+        }
+        .frame(minWidth: 820, idealWidth: 880, minHeight: 560, idealHeight: 620)
+        .tint(Theme.accent)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                statusLine
+                Image(systemName: "paperplane.fill")
+                    .foregroundStyle(Theme.mqtt)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.mqtt.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(composer.topic.isEmpty ? "Publish Message" : "Publish to \(composer.topic)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer()
-                Button("Close", action: onClose)
-                    .keyboardShortcut(.cancelAction)
-                if composer.isSending {
-                    Button("Stop") { composer.cancel() }
-                } else {
-                    Button("Send") { composer.send() }
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(composer.problem != nil)
-                        .help(composer.problem ?? "Connect, publish, then disconnect (⌘↩)")
+                HStack(spacing: 6) {
+                    StatusDot(color: composer.target.host.isEmpty ? Theme.neutral : Theme.success)
+                    Text("\(composer.target.host.isEmpty ? "No broker" : composer.target.host):\(String(composer.target.port)) · MQTT \(composer.target.version == .v5 ? "5.0" : "3.1.1")\(composer.target.useTLS ? " · TLS" : "")")
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .background(Theme.fill, in: Capsule())
+            }
+            if !composer.isAllowed {
+                ProNotice(feature: "MQTT publish and replay", detail: "You can fill this in now; sending needs a Pro license.")
+            }
+        }
+        .padding(16)
+    }
+
+    private var settings: some View {
+        Form {
+            Section("Message") {
+                TextField("Topic", text: $composer.topic, prompt: Text("home/kitchen/light/set"))
+                    .font(.body.monospaced())
+                Picker("QoS", selection: $composer.qos) {
+                    Text("0").tag(MQTTQoS.atMostOnce)
+                    Text("1").tag(MQTTQoS.atLeastOnce)
+                    Text("2").tag(MQTTQoS.exactlyOnce)
+                }
+                .pickerStyle(.segmented)
+                .help("0: at most once · 1: at least once · 2: exactly once")
+                Toggle("Retain", isOn: $composer.retain)
+                if composer.target.version == .v5 {
+                    TextField("Content type", text: $composer.contentType, prompt: Text("application/json"))
+                    ForEach(composer.userProperties.indices, id: \.self) { index in
+                        HStack {
+                            TextField("Key", text: $composer.userProperties[index].key, prompt: Text("Key")).labelsHidden()
+                            TextField("Value", text: $composer.userProperties[index].value, prompt: Text("Value")).labelsHidden()
+                            Button {
+                                composer.userProperties.remove(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    Button("Add User Property") { composer.userProperties.append(.init(key: "", value: "")) }
                 }
             }
-            .padding(12)
+            Section("Broker") {
+                TextField("Host", text: $composer.target.host, prompt: Text("broker.example.com"))
+                TextField("Port", value: $composer.target.port, format: .number.grouping(.never), prompt: Text("1883"))
+                Picker("Version", selection: $composer.target.version) {
+                    Text("3.1.1").tag(MQTTVersion.v3_1_1)
+                    Text("5.0").tag(MQTTVersion.v5)
+                }
+                .pickerStyle(.segmented)
+                Toggle("TLS", isOn: $composer.target.useTLS)
+                if composer.target.useTLS {
+                    Toggle("Verify certificate", isOn: $composer.target.verifyCertificate)
+                }
+                TextField("Client ID", text: $composer.target.clientIdentifier, prompt: Text("Generated"))
+                TextField("User name", text: optional(\.username), prompt: Text("None"))
+                SecureField("Password", text: optional(\.password), prompt: Text("None"))
+            }
         }
-        .frame(minWidth: 560, idealWidth: 600, minHeight: 640, idealHeight: 720)
+        .formStyle(.grouped)
+    }
+
+    private var payloadEditor: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                CapsLabel("Payload")
+                Spacer()
+                if let payload = composer.payload {
+                    Text(payloadSummary(payload))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Picker("Format", selection: $composer.payloadFormat) {
+                    ForEach(MQTTComposer.PayloadFormat.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 120)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            Divider()
+            TextEditor(text: $composer.payloadText)
+                .font(.system(size: 13, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(10)
+                .background(Color(nsColor: .textBackgroundColor))
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Text("Send")
+                TextField("Times", value: $composer.repeatCount, format: .number)
+                    .labelsHidden()
+                    .frame(width: 52)
+                    .multilineTextAlignment(.trailing)
+                Text(composer.repeatCount == 1 ? "time" : "times, every")
+                if composer.repeatCount > 1 {
+                    TextField("Interval", value: $composer.intervalMilliseconds, format: .number)
+                        .labelsHidden()
+                        .frame(width: 64)
+                        .multilineTextAlignment(.trailing)
+                    Text("ms")
+                }
+            }
+            .font(.system(size: 12.5))
+            .foregroundStyle(.secondary)
+            Divider().frame(height: 16)
+            statusLine
+            Spacer()
+            Button("Close", action: onClose)
+                .keyboardShortcut(.cancelAction)
+            if composer.isSending {
+                Button("Stop") { composer.cancel() }
+            } else {
+                Button {
+                    composer.send()
+                } label: {
+                    Label(composer.repeatCount > 1 ? "Send \(composer.repeatCount)×" : "Send", systemImage: "paperplane.fill")
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .disabled(composer.problem != nil)
+                .help(composer.problem ?? "Connect, publish, then disconnect (⌘↩)")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.bar)
+    }
+
+    private func payloadSummary(_ payload: [UInt8]) -> String {
+        let size = Formatting.byteCount(payload.count)
+        guard composer.payloadFormat != .hex, !payload.isEmpty else { return size }
+        return Formatting.prettyJSON(payload) != nil ? "\(size) · valid JSON" : size
     }
 
     @ViewBuilder

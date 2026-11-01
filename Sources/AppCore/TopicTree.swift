@@ -15,6 +15,10 @@ public struct TopicNode: Identifiable, Equatable, Sendable {
     public var lastPayload: [UInt8]?
     public var lastUpdated: Date?
     public var retained = false
+    /// The latest messages published exactly to this topic, oldest first (at most `historyLimit`).
+    public var history: [TopicSample] = []
+
+    public static let historyLimit = 300
 
     /// Children for `OutlineGroup`, nil for leaves so no disclosure arrow is drawn.
     public var outlineChildren: [TopicNode]? { children.isEmpty ? nil : children }
@@ -69,8 +73,75 @@ public struct TopicTree: Equatable, Sendable {
             nodes[index!].lastPayload = payload
             nodes[index!].lastUpdated = date
             nodes[index!].retained = retained
+            nodes[index!].history.append(TopicSample(date: date, payload: payload))
+            if nodes[index!].history.count > TopicNode.historyLimit {
+                nodes[index!].history.removeFirst(nodes[index!].history.count - TopicNode.historyLimit)
+            }
         } else {
             insert(rest, parent: id, into: &nodes[index!].children, payload: payload, retained: retained, date: date)
         }
+    }
+}
+
+/// One message published to a topic.
+public struct TopicSample: Equatable, Sendable {
+    public var date: Date
+    public var payload: [UInt8]
+}
+
+/// A numeric JSON field charted over time, such as `celsius` from `{"celsius":21.6}`.
+public struct NumericSeries: Equatable, Sendable, Identifiable {
+    public var field: String
+    public var points: [Point]
+    public var id: String { field }
+
+    public struct Point: Equatable, Sendable {
+        public var date: Date
+        public var value: Double
+    }
+
+    public var latest: Double? { points.last?.value }
+    public var minimum: Double? { points.map(\.value).min() }
+    public var maximum: Double? { points.map(\.value).max() }
+
+    /// Top-level numeric fields of JSON object payloads (and bare numeric payloads, as "value"),
+    /// in the order they first appear. Fields with fewer than two points are left out.
+    public static func series(from samples: [TopicSample]) -> [NumericSeries] {
+        var order: [String] = []
+        var points: [String: [Point]] = [:]
+        for sample in samples {
+            for (field, value) in numericFields(sample.payload) {
+                if points[field] == nil { order.append(field) }
+                points[field, default: []].append(Point(date: sample.date, value: value))
+            }
+        }
+        return order.compactMap { field in
+            guard let values = points[field], values.count >= 2 else { return nil }
+            return NumericSeries(field: field, points: values)
+        }
+    }
+
+    static func numericFields(_ payload: [UInt8]) -> [(String, Double)] {
+        guard !payload.isEmpty, payload.count <= 64 * 1024,
+              let object = try? JSONSerialization.jsonObject(with: Data(payload), options: [.fragmentsAllowed]) else { return [] }
+        if let dictionary = object as? [String: Any] {
+            // JSONSerialization loses key order, so sort for stable output.
+            return dictionary.keys.sorted().compactMap { key in number(dictionary[key]).map { (key, $0) } }
+        }
+        return number(object).map { [("value", $0)] } ?? []
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        // Booleans bridge to NSNumber too; skip them.
+        #if canImport(Darwin)
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return number.doubleValue
+        #else
+        if value is Bool { return nil }
+        if let number = value as? NSNumber, String(cString: number.objCType) != "c" { return number.doubleValue }
+        if let double = value as? Double { return double }
+        if let int = value as? Int { return Double(int) }
+        return nil
+        #endif
     }
 }

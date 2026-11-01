@@ -82,8 +82,11 @@ enum Screenshots {
         model.selection = row { $0.badge == "CONNECT" }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
 
+        for event in SampleTraffic.temperatureReadings() { model.ingest(event) }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
                         size: size, dark: false, name: "05-mqtt-topic-tree", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
+                        size: size, dark: true, name: "05b-mqtt-topics-dark", into: directory)
 
         model.section = .webSocket
         model.selection = row { $0.kind == .webSocket && $0.size > 50 }
@@ -178,9 +181,9 @@ enum Screenshots {
         let second = Task { await handler.editResponse(response, for: login) }
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
-        try await shoot(BreakpointEditor(center: center, item: center.paused[0]), size: NSSize(width: 780, height: 640),
+        try await shoot(BreakpointEditor(center: center, item: center.paused[0]), size: NSSize(width: 880, height: 620),
                         dark: false, name: "14-breakpoint-request", into: directory)
-        try await shoot(BreakpointEditor(center: center, item: center.paused[1]), size: NSSize(width: 780, height: 640),
+        try await shoot(BreakpointEditor(center: center, item: center.paused[1]), size: NSSize(width: 880, height: 620),
                         dark: true, name: "15-breakpoint-response-dark", into: directory)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
                         size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
@@ -199,7 +202,7 @@ enum Screenshots {
         }
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
-        let composerSize = NSSize(width: 600, height: 760)
+        let composerSize = NSSize(width: 880, height: 620)
         try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
         try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
 
