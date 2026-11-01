@@ -167,6 +167,24 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         }
     }
 
+    /// Deletes the oldest sessions so at most `count` remain; the current session is always kept.
+    /// Returns how many were deleted.
+    @discardableResult
+    public func pruneSessions(keepingNewest count: Int) throws -> Int {
+        let current = currentSession
+        var keep = max(1, count) - 1 // the current session takes one slot
+        var deleted = 0
+        for session in try sessions() where session.id != current {
+            if keep > 0 {
+                keep -= 1
+            } else {
+                try deleteSession(session.id)
+                deleted += 1
+            }
+        }
+        return deleted
+    }
+
     // MARK: Helpers
 
     private func decodeRow(_ row: [SQLiteValue]) throws -> StoredCaptureEvent {

@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "ProxyCore", targets: ["ProxyCore"]),
         .library(name: "TLSMitm", targets: ["TLSMitm"]),
         .library(name: "CaptureStore", targets: ["CaptureStore"]),
+        .library(name: "Licensing", targets: ["Licensing"]),
         .library(name: "AppCore", targets: ["AppCore"]),
         .executable(name: "TrafficWatcher", targets: ["TrafficWatcherApp"]),
     ],
@@ -23,10 +24,12 @@ let package = Package(
         .target(name: "MQTTCore"),
         .systemLibrary(name: "CSQLite", providers: [.apt(["libsqlite3-dev"]), .brew(["sqlite"])]),
         .target(name: "CaptureStore", dependencies: ["CSQLite", "MQTTCore", "ProxyCore"]),
+        // Pro license: Lemon Squeezy client, entitlement rules, keychain storage. Foundation only.
+        .target(name: "Licensing"),
         .target(
             name: "AppCore",
             dependencies: [
-                "CaptureStore", "ProxyCore", "TLSMitm", "MQTTCore",
+                "CaptureStore", "ProxyCore", "TLSMitm", "MQTTCore", "Licensing",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
@@ -39,7 +42,7 @@ let package = Package(
         // SwiftUI app. Its views compile only on macOS; elsewhere the executable is a stub.
         .executableTarget(
             name: "TrafficWatcherApp",
-            dependencies: ["AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm"],
+            dependencies: ["AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
@@ -67,10 +70,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(name: "MQTTCoreTests", dependencies: ["MQTTCore"]),
+        .testTarget(name: "LicensingTests", dependencies: ["Licensing"]),
         .testTarget(name: "CaptureStoreTests", dependencies: ["CaptureStore", "ProxyCore", "MQTTCore"]),
         .testTarget(
             name: "AppCoreTests",
-            dependencies: ["AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm"],
+            dependencies: ["AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

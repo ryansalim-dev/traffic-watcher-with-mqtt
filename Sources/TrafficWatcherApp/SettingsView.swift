@@ -7,9 +7,10 @@ import TLSMitm
 struct SettingsView: View {
     @Bindable var model: CaptureViewModel
     let certificates: CertificateStorage
+    let license: LicenseManager
     @State var tab: Tab = .proxy
 
-    enum Tab: Hashable { case proxy, mqtt, certificate }
+    enum Tab: Hashable { case proxy, mqtt, certificate, license }
 
     var body: some View {
         TabView(selection: $tab) {
@@ -22,8 +23,11 @@ struct SettingsView: View {
             CertificateSettings(model: model, certificates: certificates)
                 .tabItem { Label("Certificate", systemImage: "checkmark.seal") }
                 .tag(Tab.certificate)
+            LicenseSettings(license: license)
+                .tabItem { Label("License", systemImage: "key") }
+                .tag(Tab.license)
         }
-        .frame(width: 560, height: 420)
+        .frame(width: 560, height: 520)
     }
 }
 

@@ -148,6 +148,11 @@ public final class CaptureViewModel {
     public var searchText = "" {
         didSet { runSearch() }
     }
+    /// Saved sessions to keep (free tier); nil keeps them all. Older sessions are deleted when it is set
+    /// and whenever a new session starts.
+    public var sessionLimit: Int? {
+        didSet { applySessionLimit() }
+    }
 
     public let store: CaptureStore
     private let engine: CaptureEngine?
@@ -201,6 +206,7 @@ public final class CaptureViewModel {
     public func newSession(named name: String = "Session") {
         do {
             try store.startSession(named: name)
+            applySessionLimit()
             rows = []
             topicTree = TopicTree()
             selection = nil
@@ -216,6 +222,15 @@ public final class CaptureViewModel {
         engine?.bypass(host: host)
         if !configuration.bypassHosts.contains(host) { configuration.bypassHosts.append(host) }
         pinnedHosts.removeAll { $0 == host }
+    }
+
+    private func applySessionLimit() {
+        guard let sessionLimit else { return }
+        do {
+            try store.pruneSessions(keepingNewest: sessionLimit)
+        } catch {
+            lastError = "Could not remove old sessions: \(error)"
+        }
     }
 
     // MARK: Events
