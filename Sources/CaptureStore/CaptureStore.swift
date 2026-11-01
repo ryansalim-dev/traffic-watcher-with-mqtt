@@ -15,6 +15,8 @@ public struct StoredCaptureEvent: Equatable, Sendable, Identifiable {
     public var kind: String
     public var host: String
     public var summary: String
+    /// When the event happened (request start, packet time), or when it was recorded.
+    public var timestamp: Date
     public var event: CaptureEvent
 }
 
@@ -66,19 +68,30 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         }
     }
 
-    private func insert(_ event: CaptureEvent, session: UUID) throws {
+    /// Records `event` into the current session and returns it as stored, for live UIs that
+    /// need the row id and derived columns straight away.
+    @discardableResult
+    public func append(_ event: CaptureEvent) throws -> StoredCaptureEvent {
+        try withLock { try insert(event, session: _currentSession) }
+    }
+
+    @discardableResult
+    private func insert(_ event: CaptureEvent, session: UUID) throws -> StoredCaptureEvent {
         let index = EventIndex(event, recordedAt: Date())
         let payload = try encoder.encode(StoredEvent(event))
-        try database.transaction {
+        return try database.transaction {
             try database.query(
                 "INSERT INTO events (session_id, kind, timestamp, host, summary, payload) VALUES (?, ?, ?, ?, ?, ?)",
                 [.text(session.uuidString), .text(index.kind), .real(index.timestamp.timeIntervalSince1970),
                  .text(index.host), .text(index.summary), .blob(payload)]
             )
+            let id = database.lastInsertRowID
             try database.query(
                 "INSERT INTO events_fts (rowid, content) VALUES (?, ?)",
-                [.integer(database.lastInsertRowID), .text(index.searchText)]
+                [.integer(id), .text(index.searchText)]
             )
+            return StoredCaptureEvent(id: id, sessionID: session, kind: index.kind, host: index.host, summary: index.summary,
+                                      timestamp: index.timestamp, event: event)
         }
     }
 
@@ -107,7 +120,7 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
     public func events(in session: UUID, kinds: Set<String>? = nil, limit: Int = 1000, offset: Int = 0) throws -> [StoredCaptureEvent] {
         let all = try withLock {
             try database.query(
-                "SELECT id, session_id, kind, host, summary, payload FROM events WHERE session_id = ? ORDER BY id LIMIT ? OFFSET ?",
+                "SELECT id, session_id, kind, host, summary, payload, timestamp FROM events WHERE session_id = ? ORDER BY id LIMIT ? OFFSET ?",
                 [.text(session.uuidString), .integer(Int64(limit)), .integer(Int64(offset))]
             )
         }
@@ -120,7 +133,7 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         let match = Self.ftsQuery(text)
         guard !match.isEmpty else { return [] }
         var sql = """
-            SELECT e.id, e.session_id, e.kind, e.host, e.summary, e.payload
+            SELECT e.id, e.session_id, e.kind, e.host, e.summary, e.payload, e.timestamp
             FROM events_fts f JOIN events e ON e.id = f.rowid
             WHERE events_fts MATCH ?
             """
@@ -164,6 +177,7 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
             kind: row[2].string ?? "",
             host: row[3].string ?? "",
             summary: row[4].string ?? "",
+            timestamp: Date(timeIntervalSince1970: row[6].double ?? 0),
             event: try stored.captureEvent()
         )
     }
