@@ -650,7 +650,7 @@ struct SetupView: View {
                         .font(.system(size: 13.5, weight: .semibold))
                         .padding(.horizontal, 18)
                         .frame(height: 36)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                         .background(Theme.accent, in: Capsule())
                         .shadow(color: Theme.accent.opacity(0.45), radius: 10, y: 6)
                         .contentShape(Capsule())

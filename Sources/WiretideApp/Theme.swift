@@ -10,6 +10,8 @@ enum Theme {
 
     /// Tide teal, the one accent color.
     static let accent = Color(light: 0x0B8D87, dark: 0x4FD1C5)
+    /// Text and icons drawn on top of the accent color.
+    static let onAccent = Color(light: 0xFFFFFF, dark: 0x06201E)
 
     // MARK: Meaning
 
