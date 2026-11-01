@@ -72,6 +72,8 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 CaptureToggle(model: model)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 BreakpointsToggle(center: model.breakpoints)
             }
             ToolbarItem(placement: .primaryAction) {
