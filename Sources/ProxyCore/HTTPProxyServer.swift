@@ -177,7 +177,11 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             state = .receiving(head: head, body: body, startedAt: startedAt)
         case (.end, .receiving(let head, let body, let startedAt)):
             state = .forwarding
-            forward(context: context, head: head, body: body, startedAt: startedAt)
+            if head.isWebSocketUpgrade {
+                upgradeWebSocket(context: context, head: head, body: body, startedAt: startedAt)
+            } else {
+                forward(context: context, head: head, body: body, startedAt: startedAt)
+            }
         default:
             respondWithError(context: context, status: .badRequest, message: "Unexpected request part")
             state = .failed
@@ -215,8 +219,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
 
         let target: AbsoluteHTTPTarget
         if let origin {
-            let path = AbsoluteHTTPTarget(head.uri.replacingOccurrences(of: "https://", with: "http://"))?.originForm ?? head.uri
-            target = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: path)
+            target = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: Self.originForm(of: head.uri))
         } else if let absolute = AbsoluteHTTPTarget(head.uri) {
             target = absolute
         } else {
@@ -266,6 +269,101 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
             }
         }
+    }
+
+    // MARK: WebSocket
+
+    /// Relays a WebSocket upgrade byte for byte after rewriting the request for the upstream,
+    /// with a `WebSocketTap` watching both directions.
+    private func upgradeWebSocket(context: ChannelHandlerContext, head: HTTPRequestHead, body: ByteBuffer, startedAt: Date) {
+        let exchange = HTTPExchange(
+            id: UUID(),
+            startedAt: startedAt,
+            duration: 0,
+            method: head.method.rawValue,
+            url: origin?.url(for: head.uri) ?? head.uri,
+            requestHeaders: head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
+            requestBody: Array(body.readableBytesView),
+            statusCode: nil,
+            responseHeaders: [],
+            responseBody: [],
+            error: nil
+        )
+        let target: AbsoluteHTTPTarget
+        if let origin {
+            target = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: Self.originForm(of: head.uri))
+        } else if let absolute = AbsoluteHTTPTarget(head.uri) {
+            target = absolute
+        } else {
+            var failed = exchange
+            failed.statusCode = 400
+            failed.error = "Proxy requests need an absolute http:// URL"
+            sink.record(.httpExchange(failed))
+            respondWithError(context: context, status: .badRequest, message: failed.error!)
+            return
+        }
+
+        // Keep the handshake intact but drop proxy headers, and refuse compression so frames stay readable.
+        var headers = HTTPHeaders()
+        for (name, value) in head.headers {
+            let lower = name.lowercased()
+            if lower == "proxy-connection" || lower == "proxy-authorization" || lower == "sec-websocket-extensions" { continue }
+            headers.add(name: name, value: value)
+        }
+        if !headers.contains(name: "Host") { headers.add(name: "Host", value: target.authority) }
+        var request = "\(head.method.rawValue) \(target.originForm) HTTP/1.1\r\n"
+        for (name, value) in headers { request += "\(name): \(value)\r\n" }
+        request += "\r\n"
+        var requestBuffer = context.channel.allocator.buffer(capacity: request.utf8.count + body.readableBytes)
+        requestBuffer.writeString(request)
+        var bodyCopy = body
+        requestBuffer.writeBuffer(&bodyCopy)
+
+        state = .connectingTunnel
+        connectRequestEnded = true
+        context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { _ in }
+        let tls = origin == nil ? nil : shared.upstreamTLS
+        let host = target.host
+        ClientBootstrap(group: context.eventLoop)
+            .connectTimeout(.seconds(15))
+            .channelOption(ChannelOptions.autoRead, value: false)
+            .channelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    if let tls {
+                        let sni = ipAddressBytes(host) == nil ? host : nil
+                        try channel.pipeline.syncOperations.addHandler(NIOSSLClientHandler(context: tls, serverHostname: sni))
+                    }
+                }
+            }
+            .connect(host: target.host, port: target.port)
+            .whenComplete { result in
+                switch result {
+                case .failure(let error):
+                    var failed = exchange
+                    failed.statusCode = 502
+                    failed.error = String(describing: error)
+                    self.sink.record(.httpExchange(failed))
+                    context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
+                    self.respondWithError(context: context, status: .badGateway, message: failed.error!)
+                case .success(let upstream):
+                    let tap = WebSocketTap(sink: self.sink, request: exchange)
+                    let (clientSide, serverSide) = GlueHandler.pair(
+                        onReadA: { tap.receiveFromClient($0) },
+                        onReadB: { tap.receiveFromServer($0) }
+                    )
+                    upstream.writeAndFlush(requestBuffer, promise: nil)
+                    self.switchProtocols(context: context, answerConnect: false, onFailure: { upstream.close(promise: nil) }) { pipeline in
+                        try upstream.pipeline.syncOperations.addHandler(serverSide)
+                        try pipeline.addHandler(clientSide)
+                    }
+                    upstream.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
+                }
+            }
+    }
+
+    /// The path and query of a request target, whether origin-form or absolute.
+    private static func originForm(of uri: String) -> String {
+        AbsoluteHTTPTarget(uri.replacingOccurrences(of: "https://", with: "http://", options: .anchored))?.originForm ?? uri
     }
 
     private func writeResponse(context: ChannelHandlerContext, head: HTTPResponseHead, body: ByteBuffer, keepAlive: Bool) {
@@ -370,23 +468,26 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         upstream.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
     }
 
-    /// Answers the CONNECT with 200, swaps the HTTP codecs for the handlers `install` adds,
+    /// Answers the CONNECT with 200 (unless `answerConnect` is false), swaps the HTTP codecs for the handlers `install` adds,
     /// replays any bytes that arrived during the swap, then removes this handler.
     private func switchProtocols(
         context: ChannelHandlerContext,
+        answerConnect: Bool = true,
         onFailure: @escaping () -> Void,
         install: @escaping (ChannelPipeline.SynchronousOperations) throws -> Void
     ) {
         guard connectRequestEnded else {
             switchAfterConnectEnds = { [unowned self] in
-                self.switchProtocols(context: context, onFailure: onFailure, install: install)
+                self.switchProtocols(context: context, answerConnect: answerConnect, onFailure: onFailure, install: install)
             }
             return
         }
-        var head = HTTPResponseHead(version: .http1_1, status: .ok)
-        head.headers.add(name: "Content-Length", value: "0")
-        context.write(wrapOutboundOut(.head(head)), promise: nil)
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        if answerConnect {
+            var head = HTTPResponseHead(version: .http1_1, status: .ok)
+            head.headers.add(name: "Content-Length", value: "0")
+            context.write(wrapOutboundOut(.head(head)), promise: nil)
+            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        }
 
         state = .switchingToTunnel(pending: [])
         let pipeline = context.pipeline
@@ -496,6 +597,12 @@ func parseAuthority(_ authority: String, defaultPort: Int? = nil) -> (String, In
         return nil
     }
     return (String(hostPart), port)
+}
+
+extension HTTPRequestHead {
+    var isWebSocketUpgrade: Bool {
+        method == .GET && headers["upgrade"].contains { $0.lowercased() == "websocket" }
+    }
 }
 
 extension HTTPHeaders {

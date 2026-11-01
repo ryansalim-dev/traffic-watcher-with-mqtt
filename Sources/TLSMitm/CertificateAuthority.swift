@@ -79,12 +79,21 @@ public struct CertificateAuthority: Sendable {
     ///
     /// Validity stays under Apple's 398-day limit for TLS server certificates.
     public func issueLeaf(for host: String, now: Date = Date()) throws -> IssuedCertificate {
+        try issueLeaf(for: [host], now: now)
+    }
+
+    /// Issues one leaf valid for every name in `hosts`; the first one becomes the common name.
+    public func issueLeaf(for hosts: [String], now: Date = Date()) throws -> IssuedCertificate {
+        precondition(!hosts.isEmpty, "a leaf needs at least one host")
+        let host = hosts[0]
         let key = P256.Signing.PrivateKey()
         let publicKey = Certificate.PublicKey(key.publicKey)
-        let subjectAltName: GeneralName = if let ip = ipAddressBytes(host) {
-            .ipAddress(ASN1OctetString(contentBytes: ArraySlice(ip)))
-        } else {
-            .dnsName(host)
+        let subjectAltNames: [GeneralName] = hosts.map { name in
+            if let ip = ipAddressBytes(name) {
+                .ipAddress(ASN1OctetString(contentBytes: ArraySlice(ip)))
+            } else {
+                .dnsName(name)
+            }
         }
         let leaf = try Certificate(
             version: .v3,
@@ -99,7 +108,7 @@ public struct CertificateAuthority: Sendable {
                 Critical(BasicConstraints.notCertificateAuthority)
                 Critical(KeyUsage(digitalSignature: true))
                 try ExtendedKeyUsage([.serverAuth])
-                SubjectAlternativeNames([subjectAltName])
+                SubjectAlternativeNames(subjectAltNames)
                 SubjectKeyIdentifier(hash: publicKey)
             },
             issuerPrivateKey: Certificate.PrivateKey(privateKey)

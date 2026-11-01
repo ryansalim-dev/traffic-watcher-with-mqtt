@@ -4,7 +4,7 @@ A native macOS debugging proxy for app developers, with HTTP(S) and MQTT as equa
 
 ## Status
 
-Early development. The MQTT decoder, the capture proxy engine and HTTPS interception are in place. Storage and the macOS app come next.
+Early development. The MQTT decoder, the capture proxy engine, HTTPS interception and MQTT over WebSocket and TLS are in place. Storage and the macOS app come next.
 
 ## Layout
 
@@ -12,9 +12,9 @@ Early development. The MQTT decoder, the capture proxy engine and HTTPS intercep
 | --- | --- |
 | `MQTTCore` | Packet model, MQTT 5 properties, packet decoder, streaming decoder for chunked TCP or WebSocket data, and `MQTTSession`, which tracks the protocol version, client ID and per-direction topic aliases for one connection |
 | `TLSMitm` | `CertificateAuthority` generates a local root (P-256, PEM/DER export) and issues per-host leaf certificates for DNS names or IPs. `TLSInterceptor` caches a TLS context per host and holds the bypass list for pinned hosts |
-| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. `MQTTForwarder` relays a local port to one broker and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
+| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. WebSocket upgrades (over HTTP or decrypted HTTPS) are relayed with every frame decoded: `mqtt*` subprotocols produce MQTT events, others produce `webSocketMessage` events. `MQTTForwarder` relays a local port to one broker, optionally terminating and re-encrypting TLS, and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
 
-Planned next: MQTT over WebSocket and MQTT over TLS, `Store` (SQLite capture log) and the SwiftUI app.
+Planned next: `Store` (SQLite capture log) and the SwiftUI app.
 
 ### Decrypt HTTPS
 
@@ -36,6 +36,8 @@ let forwarder = MQTTForwarder(group: group, sink: sink, brokerHost: "test.mosqui
 try await forwarder.start(port: 18830) // point your app at localhost:18830
 for await event in sink.events { print(event) }
 ```
+
+For MQTT over TLS, pass `tls: .init(interceptor: interceptor)`. The port then defaults to 8883, and the app connects to `localhost` with the proxy's root CA trusted.
 
 ## Develop
 
