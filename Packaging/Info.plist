@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for TrafficWatcher.app. scripts/build-app.sh fills in versions, IDs and release
+     settings with plutil, and removes the optional keys that are left empty. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>TrafficWatcher</string>
+	<key>CFBundleIdentifier</key>
+	<string>BUNDLE_ID</string>
+	<key>CFBundleName</key>
+	<string>Traffic Watcher</string>
+	<key>CFBundleDisplayName</key>
+	<string>Traffic Watcher</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>VERSION</string>
+	<key>CFBundleVersion</key>
+	<string>BUILD</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>COPYRIGHT</string>
+
+	<!-- Sparkle -->
+	<key>SUFeedURL</key>
+	<string></string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+
+	<!-- Licensing (see Sources/AppCore/LicenseManager.swift) -->
+	<key>TWLemonSqueezyStoreID</key>
+	<string></string>
+	<key>TWLemonSqueezyProductIDs</key>
+	<string></string>
+	<key>TWPurchaseURL</key>
+	<string></string>
+	<key>TWReleaseDate</key>
+	<string></string>
+</dict>
+</plist>

@@ -1,0 +1,126 @@
+name: Release
+
+# Push a tag like v1.0.0 to build, sign, notarize and publish a release, then add it to the
+# Sparkle appcast on GitHub Pages (https://<owner>.github.io/<repo>/appcast.xml).
+#
+# Repository secrets:
+#   DEVELOPER_ID_CERT_P12     base64 of the "Developer ID Application" certificate + key (.p12)
+#   DEVELOPER_ID_CERT_PASSWORD password of that .p12
+#   APPLE_TEAM_ID             10-character team ID
+#   APPLE_ID                  Apple ID used for notarization
+#   APPLE_APP_PASSWORD        app-specific password for that Apple ID
+#   SPARKLE_PRIVATE_KEY       private EdDSA key from Sparkle's generate_keys -x
+# Repository variables:
+#   SPARKLE_PUBLIC_KEY        public EdDSA key (goes into Info.plist)
+#   LS_STORE_ID, LS_PRODUCT_IDS, PURCHASE_URL   Lemon Squeezy store, product(s) and checkout link
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      VERSION: ${{ github.ref_name }}
+      FEED_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check secrets
+        env:
+          CERT: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          SPARKLE: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SPARKLE_PUBLIC: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: |
+          missing=()
+          [[ -n "$CERT" ]] || missing+=(DEVELOPER_ID_CERT_P12)
+          [[ -n "$TEAM" ]] || missing+=(APPLE_TEAM_ID)
+          [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
+          [[ -n "$SPARKLE" ]] || missing+=(SPARKLE_PRIVATE_KEY)
+          [[ -n "$SPARKLE_PUBLIC" ]] || missing+=("SPARKLE_PUBLIC_KEY (variable)")
+          if (( ${#missing[@]} )); then
+            echo "::error::Missing release settings: ${missing[*]}. See the comment at the top of release.yml."
+            exit 1
+          fi
+
+      - name: Import the Developer ID certificate
+        env:
+          CERT: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
+          [[ -n "$IDENTITY" ]] || { echo "::error::No Developer ID Application identity in the certificate"; exit 1; }
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build, sign and notarize
+        env:
+          VERSION: ${{ github.ref_name }}
+          SU_FEED_URL: ${{ env.FEED_URL }}
+          SU_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+          LS_STORE_ID: ${{ vars.LS_STORE_ID }}
+          LS_PRODUCT_IDS: ${{ vars.LS_PRODUCT_IDS }}
+          PURCHASE_URL: ${{ vars.PURCHASE_URL }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          export VERSION="${VERSION#v}"
+          OUTPUT=dist scripts/build-app.sh
+
+      - name: Update the appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          TOOLS=$(find .build/artifacts -type d -path '*Sparkle*/bin' | head -1)
+          mkdir -p updates
+          cp dist/*.zip updates/
+          # Keep earlier releases in the feed.
+          git fetch origin gh-pages:gh-pages 2>/dev/null && git show gh-pages:appcast.xml > updates/appcast.xml 2>/dev/null || true
+          echo "$SPARKLE_PRIVATE_KEY" | "$TOOLS/generate_appcast" --ed-key-file - \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
+            --link "https://github.com/${{ github.repository }}" \
+            updates
+          cp updates/appcast.xml dist/appcast.xml
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.zip --title "Traffic Watcher ${{ github.ref_name }}" --generate-notes
+
+      - name: Publish the appcast to GitHub Pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp dist/appcast.xml "$RUNNER_TEMP/appcast.xml"
+          if git show-ref --verify --quiet refs/heads/gh-pages; then
+            git switch gh-pages
+          else
+            git switch --orphan gh-pages
+            git rm -rf --quiet . || true
+          fi
+          cp "$RUNNER_TEMP/appcast.xml" appcast.xml
+          git add appcast.xml
+          git commit -m "Appcast for ${{ github.ref_name }}"
+          git push origin gh-pages

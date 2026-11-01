@@ -21,9 +21,11 @@ enum Launcher {
 
 struct TrafficWatcherApp: App {
     @State private var setup = AppSetup.load()
+    @StateObject private var updates = Updates()
 
     init() {
         // Lets `swift run TrafficWatcher` show a normal app with a Dock icon and menu bar.
+        // (A packaged .app gets this from its Info.plist; setting it again is harmless.)
         NSApplication.shared.setActivationPolicy(.regular)
         DispatchQueue.main.async { NSApplication.shared.activate(ignoringOtherApps: true) }
     }
@@ -40,6 +42,7 @@ struct TrafficWatcherApp: App {
             }
         }
         .commands {
+            UpdateCommands(updates: updates)
             CaptureCommands(model: setup.model)
         }
 

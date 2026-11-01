@@ -19,6 +19,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.18.0"),
         .package(url: "https://github.com/apple/swift-asn1.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
+        // Auto-updates for the macOS app (binary framework; linked on macOS only).
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
     ],
     targets: [
         .target(name: "MQTTCore"),
@@ -42,8 +44,13 @@ let package = Package(
         // SwiftUI app. Its views compile only on macOS; elsewhere the executable is a stub.
         .executableTarget(
             name: "TrafficWatcherApp",
-            dependencies: ["AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            dependencies: [
+                "AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing",
+                .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Inside TrafficWatcher.app, Sparkle.framework lives in Contents/Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"], .when(platforms: [.macOS]))]
         ),
         .target(
             name: "TLSMitm",

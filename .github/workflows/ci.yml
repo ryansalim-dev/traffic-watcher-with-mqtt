@@ -14,11 +14,21 @@ jobs:
         run: swift --version
       - name: Test
         run: swift test
-      - name: Screenshots
-        timeout-minutes: 6
+      - name: Build the app bundle (universal, ad hoc signed)
+        run: OUTPUT=dist scripts/build-app.sh
+      - name: Check the bundle
         run: |
-          swift build --product TrafficWatcher
-          "$(swift build --show-bin-path)/TrafficWatcher" --screenshots screenshots
+          plutil -p dist/TrafficWatcher.app/Contents/Info.plist
+          lipo -archs dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher
+          otool -l dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher | grep -A2 LC_RPATH
+      - name: Screenshots (from the bundle, so Sparkle and rpath load as in a release)
+        timeout-minutes: 6
+        run: dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher --screenshots screenshots
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrafficWatcher-app
+          path: dist/*.zip
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
