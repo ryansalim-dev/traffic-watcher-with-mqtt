@@ -90,6 +90,8 @@ struct InspectorTabs<Tab: Hashable>: View {
                         }
                     }
                     .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
                     .foregroundStyle(selection == item.tab ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                     .frame(maxHeight: .infinity)
                     .overlay(alignment: .bottom) {
@@ -363,7 +365,8 @@ struct TimingSummary: View {
 
     static func milliseconds(_ seconds: TimeInterval) -> String {
         let ms = seconds * 1000
-        return ms < 10 && ms > 0 && ms.rounded() != ms ? String(format: "%.1f", ms) : String(Int(ms.rounded()))
+        if ms >= 1 || ms == 0 { return String(Int(ms.rounded())) }
+        return String(format: "%.1f", ms)
     }
 }
 

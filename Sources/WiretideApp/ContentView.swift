@@ -62,7 +62,7 @@ struct ContentView: View {
                         InspectorView(model: model)
                     }
                 }
-                .inspectorColumnWidth(min: 320, ideal: 420, max: 800)
+                .inspectorColumnWidth(min: 380, ideal: 420, max: 800)
                 .toolbar {
                     ToolbarItem {
                         InspectorCopyButton(model: model, topic: showsTopics ? selectedTopic : nil)
@@ -178,6 +178,7 @@ struct RecordingCapsule: View {
             }
             .font(.system(size: 12.5))
             .lineLimit(1)
+            .fixedSize()
             .padding(.leading, 4)
             .padding(.trailing, 12)
             .frame(height: 28)
@@ -362,7 +363,7 @@ struct ToolbarSearchField: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: 280, height: 28)
+        .frame(width: 240, height: 28)
         .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
