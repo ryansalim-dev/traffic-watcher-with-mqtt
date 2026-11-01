@@ -4,7 +4,7 @@ A native macOS debugging proxy for app developers, with HTTP(S) and MQTT as equa
 
 ## Status
 
-Early development. The MQTT decoder, the capture proxy engine, HTTPS interception and MQTT over WebSocket and TLS are in place. Storage and the macOS app come next.
+Early development. The MQTT decoder, the capture proxy engine, HTTPS interception and MQTT over WebSocket and TLS, and the capture store are in place. The macOS app comes next.
 
 ## Layout
 
@@ -13,8 +13,9 @@ Early development. The MQTT decoder, the capture proxy engine, HTTPS interceptio
 | `MQTTCore` | Packet model, MQTT 5 properties, packet decoder, streaming decoder for chunked TCP or WebSocket data, and `MQTTSession`, which tracks the protocol version, client ID and per-direction topic aliases for one connection |
 | `TLSMitm` | `CertificateAuthority` generates a local root (P-256, PEM/DER export) and issues per-host leaf certificates for DNS names or IPs. `TLSInterceptor` caches a TLS context per host and holds the bypass list for pinned hosts |
 | `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. WebSocket upgrades (over HTTP or decrypted HTTPS) are relayed with every frame decoded: `mqtt*` subprotocols produce MQTT events, others produce `webSocketMessage` events. `MQTTForwarder` relays a local port to one broker, optionally terminating and re-encrypting TLS, and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
+| `CaptureStore` | SQLite store and `CaptureSink`. Groups events into sessions, keeps MQTT as raw frames that are decoded again on load, searches URLs, headers, text bodies, topics and payloads with FTS5, and exports HAR 1.2 and MQTT JSON Lines |
 
-Planned next: `Store` (SQLite capture log) and the SwiftUI app.
+Planned next: the SwiftUI app.
 
 ### Decrypt HTTPS
 
@@ -41,7 +42,7 @@ For MQTT over TLS, pass `tls: .init(interceptor: interceptor)`. The port then de
 
 ## Develop
 
-Requires Swift 6.0 or later. The core packages build on macOS 14+ and Linux.
+Requires Swift 6.0 or later. The core packages build on macOS 14+ and Linux (install `libsqlite3-dev` on Linux).
 
 ```sh
 swift test

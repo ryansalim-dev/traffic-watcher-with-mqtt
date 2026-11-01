@@ -1,5 +1,5 @@
 /// RFC 6455 frame opcodes.
-public enum WebSocketOpcode: UInt8, Sendable {
+public enum WebSocketOpcode: UInt8, Sendable, Codable {
     case continuation = 0x0
     case text = 0x1
     case binary = 0x2

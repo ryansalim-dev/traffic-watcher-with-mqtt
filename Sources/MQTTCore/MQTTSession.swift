@@ -1,5 +1,5 @@
 /// Which side of the connection sent a packet.
-public enum MQTTDirection: Sendable, Equatable {
+public enum MQTTDirection: String, Sendable, Equatable, Codable {
     case clientToBroker
     case brokerToClient
 }
@@ -7,11 +7,20 @@ public enum MQTTDirection: Sendable, Equatable {
 /// A decoded packet in the context of its connection.
 public struct MQTTSessionEvent: Equatable, Sendable {
     public var direction: MQTTDirection
+    /// Protocol version the frame was decoded with, needed to decode `frame.rawBytes` again.
+    public var version: MQTTVersion
     public var frame: MQTTFrame
     /// For PUBLISH: the topic after resolving a v5 topic alias, so the UI never shows an empty topic.
     public var resolvedTopic: String?
 
     public var packet: MQTTPacket { frame.packet }
+
+    public init(direction: MQTTDirection, version: MQTTVersion, frame: MQTTFrame, resolvedTopic: String?) {
+        self.direction = direction
+        self.version = version
+        self.frame = frame
+        self.resolvedTopic = resolvedTopic
+    }
 }
 
 /// Tracks one MQTT connection seen by the proxy: both byte streams, the negotiated version,
@@ -50,7 +59,7 @@ public struct MQTTSession: Sendable {
             default:
                 break
             }
-            return MQTTSessionEvent(direction: direction, frame: frame, resolvedTopic: resolvedTopic)
+            return MQTTSessionEvent(direction: direction, version: version, frame: frame, resolvedTopic: resolvedTopic)
         }
     }
 

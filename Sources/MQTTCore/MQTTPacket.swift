@@ -1,5 +1,5 @@
 /// MQTT protocol revision, as carried in the CONNECT protocol level byte.
-public enum MQTTVersion: UInt8, Sendable, CustomStringConvertible {
+public enum MQTTVersion: UInt8, Sendable, Codable, CustomStringConvertible {
     case v3_1 = 3
     case v3_1_1 = 4
     case v5 = 5

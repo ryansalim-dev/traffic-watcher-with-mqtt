@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "MQTTCore", targets: ["MQTTCore"]),
         .library(name: "ProxyCore", targets: ["ProxyCore"]),
         .library(name: "TLSMitm", targets: ["TLSMitm"]),
+        .library(name: "CaptureStore", targets: ["CaptureStore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.0"),
@@ -18,6 +19,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "MQTTCore"),
+        .systemLibrary(name: "CSQLite", providers: [.apt(["libsqlite3-dev"]), .brew(["sqlite"])]),
+        .target(name: "CaptureStore", dependencies: ["CSQLite", "MQTTCore", "ProxyCore"]),
         .target(
             name: "TLSMitm",
             dependencies: [
@@ -43,6 +46,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(name: "MQTTCoreTests", dependencies: ["MQTTCore"]),
+        .testTarget(name: "CaptureStoreTests", dependencies: ["CaptureStore", "ProxyCore", "MQTTCore"]),
         .testTarget(
             name: "TLSMitmTests",
             dependencies: [
