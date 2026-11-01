@@ -15,10 +15,10 @@ public enum LicenseError: Error, Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .rejected(let message): "The license server said: \(message)"
-        case .wrongProduct: "This key is for a different product. Check that you copied the Traffic Watcher Pro key."
+        case .wrongProduct: "This key is for a different product. Check that you copied the Wiretide Pro key."
         case .activationLimitReached: "This key is already active on its maximum number of Macs. Deactivate it on another Mac first."
         case .network(let message): "Couldn't reach the license server: \(message)"
-        case .unexpectedResponse: "The license server sent a response Traffic Watcher didn't understand."
+        case .unexpectedResponse: "The license server sent a response Wiretide didn't understand."
         }
     }
 }

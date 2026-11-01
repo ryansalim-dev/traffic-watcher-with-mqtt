@@ -2,9 +2,9 @@ import Foundation
 
 /// Identifiers shared by the app, the helper's launchd plist and the packaging script.
 public enum HelperIdentity {
-    public static let machServiceName = "com.ryansalim.TrafficWatcher.Helper"
-    public static let launchdPlistName = "com.ryansalim.TrafficWatcher.Helper.plist"
-    public static let appBundleIdentifier = "com.ryansalim.TrafficWatcher"
+    public static let machServiceName = "app.wiretide.Wiretide.Helper"
+    public static let launchdPlistName = "app.wiretide.Wiretide.Helper.plist"
+    public static let appBundleIdentifier = "app.wiretide.Wiretide"
     /// Bumped whenever the XPC interface changes, so the app can tell an outdated helper to re-register.
     public static let protocolVersion = 1
 }
@@ -114,7 +114,7 @@ public struct SystemProxyBackup: Codable, Equatable, Sendable {
 
 #if canImport(ObjectiveC)
 /// The helper's XPC interface. Replies carry an error message, or nil on success.
-@objc public protocol TrafficWatcherHelperProtocol {
+@objc public protocol WiretideHelperProtocol {
     func protocolVersion(reply: @escaping (Int) -> Void)
     /// Points the HTTP and HTTPS proxy of every enabled network service at `host:port`.
     /// The helper restores the previous settings when `disableSystemProxy` is called or when

@@ -15,7 +15,7 @@ struct LicenseSettings: View {
                         .font(.system(size: 28))
                         .foregroundStyle(license.entitlement.isPro ? Color.accentColor : Color.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(license.entitlement.isPro ? "Traffic Watcher Pro" : "Traffic Watcher Free").font(.headline)
+                        Text(license.entitlement.isPro ? "Wiretide Pro" : "Wiretide Free").font(.headline)
                         Text(license.entitlement == .free(.noLicense) ? "Captures and inspects everything. Pro adds the tools below." : license.summary)
                             .font(.callout).foregroundStyle(.secondary)
                     }
@@ -53,7 +53,7 @@ struct LicenseSettings: View {
                             .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || license.isWorking)
                     }
                     if let url = license.configuration.purchaseURL {
-                        Link("Buy Traffic Watcher Pro", destination: url)
+                        Link("Buy Wiretide Pro", destination: url)
                     }
                 } header: {
                     Text("Activate Pro")

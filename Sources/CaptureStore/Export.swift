@@ -11,7 +11,7 @@ extension CaptureStore {
         }
         let har = HAR(log: .init(
             version: "1.2",
-            creator: .init(name: "Traffic Watcher", version: "0.1"),
+            creator: .init(name: "Wiretide", version: "0.1"),
             entries: entries
         ))
         let encoder = JSONEncoder()

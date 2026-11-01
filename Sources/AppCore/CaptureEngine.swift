@@ -32,7 +32,7 @@ public struct EngineConfiguration: Codable, Equatable, Sendable {
     public var decryptHTTPS = true
     public var bypassHosts: [String] = []
     public var forwarders: [ForwarderConfiguration] = []
-    /// Point this Mac's system HTTP/HTTPS proxy at Traffic Watcher while capturing (needs the helper).
+    /// Point this Mac's system HTTP/HTTPS proxy at Wiretide while capturing (needs the helper).
     public var setSystemProxy = false
 
     public init() {}
@@ -92,7 +92,7 @@ public struct CertificateStorage: Sendable {
 
     /// Writes the root as DER (`.cer`), the format `simctl` and macOS Keychain Access accept.
     public func exportDER(_ authority: CertificateAuthority) throws -> URL {
-        let url = directory.appendingPathComponent("TrafficWatcherCA.cer")
+        let url = directory.appendingPathComponent("WiretideCA.cer")
         try Data(authority.certificateDER).write(to: url)
         return url
     }

@@ -6,7 +6,7 @@ import Licensing
 import ProxyCore
 import SwiftUI
 
-/// `TrafficWatcher --screenshots <dir>` fills a throwaway store with sample traffic, opens the
+/// `Wiretide --screenshots <dir>` fills a throwaway store with sample traffic, opens the
 /// main views in a few states and writes PNGs of them. CI runs it so the UI can be reviewed
 /// without building the app.
 @MainActor
@@ -28,7 +28,7 @@ enum Screenshots {
 
     private static func capture(into directory: URL) async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("TrafficWatcherScreenshots-\(UUID().uuidString)")
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("WiretideScreenshots-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
 
@@ -193,7 +193,7 @@ enum Screenshots {
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.title = name.contains("settings") ? "Settings" : "Traffic Watcher"
+        window.title = name.contains("settings") ? "Settings" : "Wiretide"
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let hosting = NSHostingView(rootView: view)
         hosting.sceneBridgingOptions = [.toolbars, .title]

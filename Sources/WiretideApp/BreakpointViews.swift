@@ -23,7 +23,7 @@ struct BreakpointsToggle: View {
     }
 
     private var help: String {
-        if !center.isAllowed { return "Breakpoints are part of Traffic Watcher Pro" }
+        if !center.isAllowed { return "Breakpoints are part of Wiretide Pro" }
         let count = center.rules.filter(\.isEnabled).count
         return center.isEnabled
             ? "Breakpoints on: \(count) rule\(count == 1 ? "" : "s") can pause requests (⇧⌘B)"
@@ -287,7 +287,7 @@ struct ProNotice: View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(feature) is part of Traffic Watcher Pro").font(.callout.weight(.semibold))
+                Text("\(feature) is part of Wiretide Pro").font(.callout.weight(.semibold))
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()

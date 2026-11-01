@@ -5,17 +5,17 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.ryansalim.TrafficWatcher.Helper</string>
+	<string>app.wiretide.Wiretide.Helper</string>
 	<key>BundleProgram</key>
-	<string>Contents/MacOS/TrafficWatcherHelper</string>
+	<string>Contents/MacOS/WiretideHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.ryansalim.TrafficWatcher.Helper</key>
+		<key>app.wiretide.Wiretide.Helper</key>
 		<true/>
 	</dict>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.ryansalim.TrafficWatcher</string>
+		<string>app.wiretide.Wiretide</string>
 	</array>
 	<!-- Runs at boot so a proxy left on by a crash or power loss is switched back off. -->
 	<key>RunAtLoad</key>

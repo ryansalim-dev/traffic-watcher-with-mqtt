@@ -16,14 +16,14 @@ public struct CertificateAuthority: Sendable {
 
     /// Creates a new root valid for `validityYears` years.
     public static func generate(
-        commonName: String = "Traffic Watcher Local CA",
+        commonName: String = "Wiretide Local CA",
         validityYears: Int = 10,
         now: Date = Date()
     ) throws -> CertificateAuthority {
         let key = P256.Signing.PrivateKey()
         let name = try DistinguishedName {
             CommonName(commonName)
-            OrganizationName("Traffic Watcher")
+            OrganizationName("Wiretide")
         }
         let publicKey = Certificate.PublicKey(key.publicKey)
         let certificate = try Certificate(

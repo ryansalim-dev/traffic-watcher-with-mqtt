@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "TrafficWatcher",
+    name: "Wiretide",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "MQTTCore", targets: ["MQTTCore"]),
@@ -11,8 +11,8 @@ let package = Package(
         .library(name: "CaptureStore", targets: ["CaptureStore"]),
         .library(name: "Licensing", targets: ["Licensing"]),
         .library(name: "AppCore", targets: ["AppCore"]),
-        .executable(name: "TrafficWatcher", targets: ["TrafficWatcherApp"]),
-        .executable(name: "TrafficWatcherHelper", targets: ["TrafficWatcherHelper"]),
+        .executable(name: "Wiretide", targets: ["WiretideApp"]),
+        .executable(name: "WiretideHelper", targets: ["WiretideHelper"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.0"),
@@ -32,7 +32,7 @@ let package = Package(
         // Shared by the app and the privileged helper: XPC interface and system-proxy rules.
         .target(name: "HelperCore"),
         // Root daemon (SMAppService) that switches the system proxy on while capturing and always back off.
-        .executableTarget(name: "TrafficWatcherHelper", dependencies: ["HelperCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "WiretideHelper", dependencies: ["HelperCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(
             name: "AppCore",
             dependencies: [
@@ -48,13 +48,13 @@ let package = Package(
         ),
         // SwiftUI app. Its views compile only on macOS; elsewhere the executable is a stub.
         .executableTarget(
-            name: "TrafficWatcherApp",
+            name: "WiretideApp",
             dependencies: [
                 "AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing", "HelperCore",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)],
-            // Inside TrafficWatcher.app, Sparkle.framework lives in Contents/Frameworks.
+            // Inside Wiretide.app, Sparkle.framework lives in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"], .when(platforms: [.macOS]))]
         ),
         .target(

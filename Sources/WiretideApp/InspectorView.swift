@@ -316,7 +316,7 @@ struct PinnedHostInspector: View {
         ContentUnavailableView {
             Label("\(host) rejected our certificate", systemImage: "lock.trianglebadge.exclamationmark")
         } description: {
-            Text("The app most likely pins its certificates, or the Traffic Watcher root CA isn't trusted on this device yet.\n\n\(reason)")
+            Text("The app most likely pins its certificates, or the Wiretide root CA isn't trusted on this device yet.\n\n\(reason)")
         } actions: {
             if bypassed {
                 Label("Bypassed: relayed without decrypting", systemImage: "checkmark.circle").foregroundStyle(.green)

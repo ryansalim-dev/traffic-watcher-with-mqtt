@@ -18,19 +18,19 @@ jobs:
         run: OUTPUT=dist scripts/build-app.sh
       - name: Check the bundle
         run: |
-          plutil -p dist/TrafficWatcher.app/Contents/Info.plist
-          lipo -archs dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher
-          lipo -archs dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcherHelper
-          plutil -lint dist/TrafficWatcher.app/Contents/Library/LaunchDaemons/com.ryansalim.TrafficWatcher.Helper.plist
-          codesign -dv dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcherHelper 2>&1 | grep Identifier=com.ryansalim.TrafficWatcher.Helper
-          otool -l dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher | grep -A2 LC_RPATH
+          plutil -p dist/Wiretide.app/Contents/Info.plist
+          lipo -archs dist/Wiretide.app/Contents/MacOS/Wiretide
+          lipo -archs dist/Wiretide.app/Contents/MacOS/WiretideHelper
+          plutil -lint dist/Wiretide.app/Contents/Library/LaunchDaemons/app.wiretide.Wiretide.Helper.plist
+          codesign -dv dist/Wiretide.app/Contents/MacOS/WiretideHelper 2>&1 | grep Identifier=app.wiretide.Wiretide.Helper
+          otool -l dist/Wiretide.app/Contents/MacOS/Wiretide | grep -A2 LC_RPATH
       - name: Screenshots (from the bundle, so Sparkle and rpath load as in a release)
         timeout-minutes: 6
-        run: dist/TrafficWatcher.app/Contents/MacOS/TrafficWatcher --screenshots screenshots
+        run: dist/Wiretide.app/Contents/MacOS/Wiretide --screenshots screenshots
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
-          name: TrafficWatcher-app
+          name: Wiretide-app
           path: dist/*.zip
       - name: Upload screenshots
         if: always()

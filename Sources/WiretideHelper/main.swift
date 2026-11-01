@@ -5,16 +5,16 @@ import Security
 import SystemConfiguration
 
 /// Root daemon registered by the app with SMAppService. It does one privileged job: switch the
-/// system HTTP/HTTPS proxy to Traffic Watcher while capturing, and always switch it back, even when
+/// system HTTP/HTTPS proxy to Wiretide while capturing, and always switch it back, even when
 /// the app quits or crashes (the XPC connection closes) or the Mac restarts (a backup on disk).
 
-let backupURL = URL(fileURLWithPath: "/Library/Application Support/TrafficWatcher/SystemProxyBackup.plist")
+let backupURL = URL(fileURLWithPath: "/Library/Application Support/Wiretide/SystemProxyBackup.plist")
 
 enum ProxyStore {
     /// Applies `change` to the Proxies protocol of every enabled network service, in one commit.
     /// Returns the service IDs it changed.
     static func update(_ change: (_ serviceID: String, _ proxies: [String: Any]) -> [String: Any]?) throws -> [String] {
-        guard let prefs = SCPreferencesCreate(nil, "TrafficWatcherHelper" as CFString, nil) else { throw HelperError.systemConfiguration("open") }
+        guard let prefs = SCPreferencesCreate(nil, "WiretideHelper" as CFString, nil) else { throw HelperError.systemConfiguration("open") }
         guard SCPreferencesLock(prefs, true) else { throw HelperError.systemConfiguration("lock") }
         defer { SCPreferencesUnlock(prefs) }
 
@@ -47,7 +47,7 @@ enum HelperError: Error, CustomStringConvertible {
 /// Serializes all proxy changes on one queue and tracks which connection turned the proxy on.
 final class ProxyManager: @unchecked Sendable {
     static let shared = ProxyManager()
-    private let queue = DispatchQueue(label: "TrafficWatcherHelper.proxy")
+    private let queue = DispatchQueue(label: "WiretideHelper.proxy")
     private var owner: ObjectIdentifier?
 
     func enable(host: String, port: Int, bypass: [String], for connection: ObjectIdentifier) -> String? {
@@ -98,7 +98,7 @@ final class ProxyManager: @unchecked Sendable {
     }
 }
 
-final class HelperService: NSObject, TrafficWatcherHelperProtocol {
+final class HelperService: NSObject, WiretideHelperProtocol {
     let connection: ObjectIdentifier
 
     init(connection: ObjectIdentifier) {
@@ -120,7 +120,7 @@ final class HelperService: NSObject, TrafficWatcherHelperProtocol {
 }
 
 final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
-    /// Only the Traffic Watcher app signed by the same team as this helper may connect.
+    /// Only the Wiretide app signed by the same team as this helper may connect.
     let requirement: String?
 
     override init() {
@@ -129,13 +129,13 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         guard let requirement else {
-            NSLog("TrafficWatcherHelper: refusing connection, the helper is not signed with a team ID")
+            NSLog("WiretideHelper: refusing connection, the helper is not signed with a team ID")
             return false
         }
         connection.setCodeSigningRequirement(requirement)
         let id = ObjectIdentifier(connection)
         let service = HelperService(connection: id)
-        connection.exportedInterface = NSXPCInterface(with: TrafficWatcherHelperProtocol.self)
+        connection.exportedInterface = NSXPCInterface(with: WiretideHelperProtocol.self)
         connection.exportedObject = service
         connection.invalidationHandler = {
             // The app quit or crashed: put the user's network settings back.
@@ -166,5 +166,5 @@ listener.delegate = delegate
 listener.resume()
 RunLoop.main.run()
 #else
-print("TrafficWatcherHelper runs on macOS only.")
+print("WiretideHelper runs on macOS only.")
 #endif

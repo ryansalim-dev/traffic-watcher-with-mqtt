@@ -56,7 +56,7 @@ public struct KeychainLicenseStorage: LicenseStorage {
     public let service: String
     public let account: String
 
-    public init(service: String = "com.trafficwatcher.license", account: String = "pro") {
+    public init(service: String = "app.wiretide.license", account: String = "pro") {
         self.service = service
         self.account = account
     }
