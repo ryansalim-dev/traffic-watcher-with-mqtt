@@ -82,7 +82,7 @@ public struct TrafficRow: Identifiable, Equatable, Sendable {
             kind = .webSocket
             badge = "\(m.opcode)".uppercased()
             size = m.payload.count
-        case .tunnelOpened(let t):
+        case .tunnelOpened:
             kind = .tunnel
             badge = "TUNNEL"
         case .tunnelClosed:

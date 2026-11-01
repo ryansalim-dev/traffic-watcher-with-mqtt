@@ -10,12 +10,31 @@ final class FormattingTests: XCTestCase {
     func testPresentPicksJSONTextOrHex() {
         XCTAssertEqual(Formatting.present([]), .empty)
         XCTAssertEqual(Formatting.present(Array(#"{"b":1,"a":[true]}"#.utf8)),
-                       .json("{\n  \"a\" : [\n    true\n  ],\n  \"b\" : 1\n}"))
+                       .json("{\n  \"b\": 1,\n  \"a\": [\n    true\n  ]\n}"))
         XCTAssertEqual(Formatting.present(Array("hello\nworld".utf8)), .text("hello\nworld"))
         guard case .binary(let dump) = Formatting.present([0x00, 0x01, 0xFF]) else {
             return XCTFail("expected hex")
         }
         XCTAssertTrue(dump.hasPrefix("00000000  00 01 ff"))
+    }
+
+    func testPrettyJSONKeepsNumbersOrderAndStrings() {
+        let source = #"{"t":21.6,"s":"a, {b}: \"c\"","e":{},"l":[ ],"n":[1,{"x":null}]}"#
+        XCTAssertEqual(Formatting.prettyJSON(Array(source.utf8)), """
+        {
+          "t": 21.6,
+          "s": "a, {b}: \\"c\\"",
+          "e": {},
+          "l": [],
+          "n": [
+            1,
+            {
+              "x": null
+            }
+          ]
+        }
+        """)
+        XCTAssertNil(Formatting.prettyJSON(Array("{nope".utf8)))
     }
 
     func testJSONContentTypeThatIsNotJSONFallsBackToText() {
@@ -124,7 +143,8 @@ final class CaptureViewModelTests: XCTestCase {
     @MainActor
     func testIngestBuildsRowsSectionsAndTopicTree() async throws {
         let model = try makeModel()
-        for event in SampleTraffic.events() { model.ingest(event) }
+        let start = Date(timeIntervalSince1970: 1_793_520_000)
+        for event in SampleTraffic.events(startingAt: start) { model.ingest(event) }
 
         XCTAssertNil(model.lastError)
         XCTAssertEqual(model.rows.count, SampleTraffic.events().count)
@@ -145,7 +165,7 @@ final class CaptureViewModelTests: XCTestCase {
 
         // Rows keep the event's own time, not the time they were stored.
         let first = try XCTUnwrap(model.rows.first)
-        XCTAssertEqual(first.time.timeIntervalSince1970, 1_793_520_000.137, accuracy: 0.001)
+        XCTAssertEqual(first.time.timeIntervalSince(start), 0.137, accuracy: 0.001)
     }
 
     @MainActor

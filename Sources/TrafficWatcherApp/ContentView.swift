@@ -6,13 +6,14 @@ struct ContentView: View {
     @Bindable var model: CaptureViewModel
     let certificates: CertificateStorage
     @State var mqttMode = MQTTMode.packets
-    /// Topic selected when the topic tree first appears (used for screenshots).
-    var initialTopic: String?
+    @State var selectedTopic: TopicNode.ID?
 
     enum MQTTMode: String, CaseIterable, Identifiable {
         case packets = "Packets", topics = "Topics"
         var id: String { rawValue }
     }
+
+    private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
 
     var body: some View {
         NavigationSplitView {
@@ -20,13 +21,13 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220)
         } content: {
             Group {
-                if model.section == .mqtt && mqttMode == .topics {
-                    TopicTreeView(tree: model.topicTree, selected: initialTopic)
+                if showsTopics {
+                    TopicTreeView(tree: model.topicTree, selection: $selectedTopic)
                 } else {
                     TrafficTimeline(model: model)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 420, ideal: 620)
+            .navigationSplitViewColumnWidth(min: 420, ideal: 680)
             .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search URLs, headers, bodies, topics, payloads")
             .toolbar {
                 if model.section == .mqtt {
@@ -39,7 +40,14 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            InspectorView(model: model)
+            Group {
+                if showsTopics {
+                    TopicDetailView(tree: model.topicTree, topic: selectedTopic)
+                } else {
+                    InspectorView(model: model)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 340, ideal: 460)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -214,45 +222,103 @@ struct KindBadge: View {
     }
 }
 
+/// The MQTT topics seen so far as an outline, expanded by default.
 struct TopicTreeView: View {
     let tree: TopicTree
-    @State var selected: TopicNode.ID?
+    @Binding var selection: TopicNode.ID?
+    @State private var collapsed: Set<TopicNode.ID> = []
 
     var body: some View {
         if tree.roots.isEmpty {
             ContentUnavailableView("No topics yet", systemImage: "point.3.connected.trianglepath.dotted",
                                    description: Text("Topics appear here as PUBLISH packets are captured."))
         } else {
-            HSplitView {
-                List(tree.roots, children: \.outlineChildren, selection: $selected) { node in
-                    HStack {
-                        Text(node.name)
-                        if node.retained { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                        Spacer()
-                        Text("\(node.totalCount)")
-                            .monospacedDigit()
+            List(selection: $selection) {
+                ForEach(tree.roots) { TopicBranch(node: $0, collapsed: $collapsed) }
+            }
+        }
+    }
+}
+
+struct TopicBranch: View {
+    let node: TopicNode
+    @Binding var collapsed: Set<TopicNode.ID>
+
+    var body: some View {
+        if node.children.isEmpty {
+            TopicLabel(node: node).tag(node.id)
+        } else {
+            DisclosureGroup(isExpanded: Binding(
+                get: { !collapsed.contains(node.id) },
+                set: { expanded in
+                    if expanded { collapsed.remove(node.id) } else { collapsed.insert(node.id) }
+                }
+            )) {
+                ForEach(node.children) { TopicBranch(node: $0, collapsed: $collapsed) }
+            } label: {
+                TopicLabel(node: node)
+            }
+            .tag(node.id)
+        }
+    }
+}
+
+struct TopicLabel: View {
+    let node: TopicNode
+
+    var body: some View {
+        HStack {
+            Text(node.name)
+            if node.retained {
+                Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).help("Retained")
+            }
+            Spacer()
+            if let payload = node.lastPayload, let text = String(bytes: payload.prefix(40), encoding: .utf8) {
+                Text(text).lineLimit(1).foregroundStyle(.secondary).font(.callout.monospaced())
+            }
+            Text("\(node.totalCount)")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 24, alignment: .trailing)
+        }
+    }
+}
+
+/// Inspector for the selected topic: counts, retained flag and the latest payload.
+struct TopicDetailView: View {
+    let tree: TopicTree
+    let topic: TopicNode.ID?
+
+    var body: some View {
+        if let topic, let node = tree.node(for: topic) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(node.id).font(.headline.monospaced()).textSelection(.enabled)
+                    HStack(spacing: 12) {
+                        Text("\(node.messageCount) messages here, \(node.totalCount) including subtopics")
+                        if node.retained { Label("Retained", systemImage: "pin.fill") }
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    if let updated = node.lastUpdated {
+                        Text("Last message \(updated.formatted(date: .omitted, time: .standard))")
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                 }
-                .frame(minWidth: 220)
-
-                Group {
-                    if let id = selected, let node = tree.node(for: id) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(node.id).font(.headline).textSelection(.enabled)
-                            if let updated = node.lastUpdated {
-                                Text("\(node.messageCount) messages · last \(updated.formatted(date: .omitted, time: .standard))")
-                                    .foregroundStyle(.secondary)
-                            }
-                            BodyView(bytes: node.lastPayload ?? [], contentType: nil)
-                        }
-                        .padding()
-                    } else {
-                        Text("Select a topic to see its latest payload").foregroundStyle(.secondary)
-                    }
+                .padding(12)
+                Divider()
+                if let payload = node.lastPayload {
+                    BodyView(bytes: payload, contentType: nil)
+                } else {
+                    Text("Nothing has been published to this exact topic yet.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
             }
+        } else {
+            ContentUnavailableView("No topic selected", systemImage: "point.3.connected.trianglepath.dotted",
+                                   description: Text("Select a topic to see its latest payload."))
         }
     }
 }

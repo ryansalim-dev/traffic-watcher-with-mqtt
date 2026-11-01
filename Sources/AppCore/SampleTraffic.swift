@@ -5,7 +5,8 @@ import ProxyCore
 /// A realistic mixed capture (HTTP, MQTT, WebSocket, a pinned host) for previews, screenshots
 /// and tests. The MQTT events go through the real decoder, so they look exactly like live ones.
 public enum SampleTraffic {
-    public static func events(startingAt start: Date = Date(timeIntervalSince1970: 1_793_520_000)) -> [CaptureEvent] {
+    /// - Parameter start: the first event is about 0.1 s after this; the whole capture spans about 3 s.
+    public static func events(startingAt start: Date = Date(timeIntervalSinceNow: -3)) -> [CaptureEvent] {
         var events: [CaptureEvent] = []
         var clock = start
         func tick(_ seconds: TimeInterval = 0.137) -> Date {
@@ -67,8 +68,6 @@ public enum SampleTraffic {
             opcode: .text, payload: Array(#"{"channel":"prices","symbol":"ACME","bid":101.25,"ask":101.31}"#.utf8)
         )))
 
-        events.append(.tlsInterceptionFailed(host: "pinned.bank.example", port: 443,
-                                              reason: "handshake failed: the client rejected the certificate (bad certificate)"))
         events.append(.httpExchange(http(
             at: tick(), duration: 1.42, method: "PUT", url: "https://api.example.com/v2/devices/plug-07",
             status: 503, contentType: "text/plain", requestBody: #"{"on":true}"#, body: "upstream unavailable"
@@ -77,6 +76,9 @@ public enum SampleTraffic {
             at: tick(), duration: 0.097, method: "GET", url: "http://config.example.com/flags.json",
             status: 304, contentType: nil, body: ""
         )))
+        // Recorded with the time it is stored, so it goes last to keep the timeline in order.
+        events.append(.tlsInterceptionFailed(host: "pinned.bank.example", port: 443,
+                                              reason: "handshake failed: the client rejected the certificate (bad certificate)"))
         return events
     }
 

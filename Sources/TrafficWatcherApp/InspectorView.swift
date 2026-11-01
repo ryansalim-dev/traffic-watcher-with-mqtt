@@ -176,12 +176,15 @@ struct BodyView: View {
             if case .empty = presentation {
                 Text("No body").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView([.vertical, .horizontal]) {
-                    Text(text(presentation))
-                        .font(.callout.monospaced())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(12)
+                GeometryReader { proxy in
+                    ScrollView([.vertical, .horizontal]) {
+                        Text(text(presentation))
+                            .font(.callout.monospaced())
+                            .textSelection(.enabled)
+                            .fixedSize()
+                            .padding(12)
+                            .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .topLeading)
+                    }
                 }
                 .background(Color(nsColor: .textBackgroundColor))
             }

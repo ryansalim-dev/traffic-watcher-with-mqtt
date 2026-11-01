@@ -33,7 +33,7 @@ enum Screenshots {
         let storage = CertificateStorage(directory: scratch)
         let store = try CaptureStore(path: scratch.appendingPathComponent("captures.sqlite").path, sessionName: "Screenshots")
         var configuration = EngineConfiguration()
-        configuration.bypassHosts = ["*.apple.com", "pinned.bank.example"]
+        configuration.bypassHosts = ["*.apple.com"]
         configuration.forwarders = [
             ForwarderConfiguration(brokerHost: "broker.example.com", listenPort: 18830),
             ForwarderConfiguration(brokerHost: "iot.example.net", listenPort: 18831, useTLS: true),
@@ -42,13 +42,9 @@ enum Screenshots {
                                      configuration: configuration)
         await model.startCapture()
         for event in SampleTraffic.events() { model.ingest(event) }
-        // Keep the pinned host in the sidebar for the shot, as it looks before the user bypasses it.
-        model.configuration.bypassHosts = ["*.apple.com"]
-        model.ingest(.tlsInterceptionFailed(host: "pinned.bank.example", port: 443,
-                                            reason: "handshake failed: the client rejected the certificate (bad certificate)"))
 
         func row(_ match: (TrafficRow) -> Bool) -> TrafficRow.ID? { model.rows.first(where: match)?.id }
-        let size = NSSize(width: 1360, height: 820)
+        let size = NSSize(width: 1440, height: 860)
 
         model.section = .all
         model.selection = row { $0.summary.hasPrefix("GET https://api.example.com/v2/devices") }
@@ -62,7 +58,7 @@ enum Screenshots {
         model.selection = row { $0.badge == "CONNECT" }
         try await shoot(ContentView(model: model, certificates: storage), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
 
-        try await shoot(ContentView(model: model, certificates: storage, mqttMode: .topics, initialTopic: "home/kitchen/temperature"),
+        try await shoot(ContentView(model: model, certificates: storage, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
                         size: size, dark: false, name: "05-mqtt-topic-tree", into: directory)
 
         model.section = .webSocket
@@ -75,7 +71,7 @@ enum Screenshots {
 
         model.section = .all
         model.searchText = "kitchen"
-        model.selection = nil
+        model.selection = model.visibleRows.first { $0.kind == .mqtt }?.id
         try await shoot(ContentView(model: model, certificates: storage), size: size, dark: false, name: "08-search", into: directory)
         model.searchText = ""
 
@@ -88,7 +84,7 @@ enum Screenshots {
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL) async throws {
-        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: 40, y: 40), size: size),
+        let window = UnconstrainedWindow(contentRect: NSRect(origin: NSPoint(x: 40, y: 40), size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -134,5 +130,9 @@ enum Screenshots {
         guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
         try png.write(to: url)
     }
+}
+/// The CI runner's screen is small; let windows extend past it so shots are taken at full size.
+private final class UnconstrainedWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 #endif

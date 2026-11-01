@@ -26,11 +26,55 @@ public enum Formatting {
         return .binary(hexDump: hexDump(slice))
     }
 
+    /// Re-indents valid JSON without re-serializing it, so key order and number text
+    /// (`21.6`, not `21.600000000000001`) stay exactly as they were sent.
     public static func prettyJSON(_ bytes: [UInt8]) -> String? {
-        guard let object = try? JSONSerialization.jsonObject(with: Data(bytes), options: [.fragmentsAllowed]),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
-        else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        guard (try? JSONSerialization.jsonObject(with: Data(bytes), options: [.fragmentsAllowed])) != nil,
+              let source = String(bytes: bytes, encoding: .utf8) else { return nil }
+        var out = ""
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var pendingOpen = false // just opened a container; newline is written lazily so {} and [] stay on one line
+        func newline() { out += "\n" + String(repeating: "  ", count: depth) }
+        for character in source {
+            if inString {
+                out.append(character)
+                if escaped { escaped = false } else if character == "\\" { escaped = true } else if character == "\"" { inString = false }
+                continue
+            }
+            if character.isWhitespace { continue }
+            if pendingOpen {
+                pendingOpen = false
+                if character == "}" || character == "]" {
+                    depth -= 1
+                    out.append(character)
+                    continue
+                }
+                newline()
+            }
+            switch character {
+            case "{", "[":
+                out.append(character)
+                depth += 1
+                pendingOpen = true
+            case "}", "]":
+                depth -= 1
+                newline()
+                out.append(character)
+            case ",":
+                out.append(",")
+                newline()
+            case ":":
+                out += ": "
+            case "\"":
+                inString = true
+                out.append(character)
+            default:
+                out.append(character)
+            }
+        }
+        return out
     }
 
     /// Classic 16-bytes-per-line dump: offset, hex in two groups of 8, printable ASCII.
