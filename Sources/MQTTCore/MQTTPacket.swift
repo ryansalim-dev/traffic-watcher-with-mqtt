@@ -1,5 +1,5 @@
 /// MQTT protocol revision, as carried in the CONNECT protocol level byte.
-public enum MQTTVersion: UInt8, Sendable, Codable, CustomStringConvertible {
+public enum MQTTVersion: UInt8, Sendable, Codable, CaseIterable, CustomStringConvertible {
     case v3_1 = 3
     case v3_1_1 = 4
     case v5 = 5
@@ -18,7 +18,7 @@ public enum MQTTPacketType: UInt8, Sendable, CaseIterable {
     case subscribe, suback, unsubscribe, unsuback, pingreq, pingresp, disconnect, auth
 }
 
-public enum MQTTQoS: UInt8, Sendable {
+public enum MQTTQoS: UInt8, Sendable, Codable, CaseIterable {
     case atMostOnce = 0, atLeastOnce, exactlyOnce
 }
 

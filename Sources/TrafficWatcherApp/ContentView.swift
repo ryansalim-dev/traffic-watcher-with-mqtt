@@ -1,6 +1,8 @@
 #if os(macOS)
 import AppCore
 import AppKit
+import MQTTCore
+import ProxyCore
 import SwiftUI
 
 struct ContentView: View {
@@ -45,7 +47,10 @@ struct ContentView: View {
             .inspector(isPresented: $showInspector) {
                 Group {
                     if showsTopics {
-                        TopicDetailView(tree: model.topicTree, topic: selectedTopic)
+                        TopicDetailView(tree: model.topicTree, topic: selectedTopic) { topic in
+                            model.preparePublish(toTopic: topic)
+                            model.composer.isPresented = true
+                        }
                     } else {
                         InspectorView(model: model)
                     }
@@ -68,16 +73,36 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .navigation) {
                 CaptureToggle(model: model)
             }
+            ToolbarItem(placement: .primaryAction) {
+                BreakpointsToggle(center: model.breakpoints)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.composer.isPresented = true
+                } label: {
+                    Label("Publish", systemImage: "paperplane")
+                }
+                .help("Publish an MQTT message (⇧⌘P)")
+            }
+        }
+        .sheet(isPresented: Binding(get: { model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
+            MQTTComposerView(composer: model.composer) { model.composer.isPresented = false }
+        }
+        .sheet(item: Binding(get: { model.breakpoints.paused.first }, set: { _ in })) { item in
+            BreakpointEditor(center: model.breakpoints, item: item)
+                .id(item.id)
         }
         .safeAreaInset(edge: .bottom) {
             StatusBar(model: model, license: license)
         }
         .task {
             model.sessionLimit = license.sessionLimit
+            model.apply(license.entitlement)
             await license.refreshIfNeeded()
         }
         .onChange(of: license.entitlement) {
             model.sessionLimit = license.sessionLimit
+            model.apply(license.entitlement)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await license.refreshIfNeeded() }
@@ -129,6 +154,10 @@ struct StatusBar: View {
                 Text("MQTT :\(String(forwarder.listenPort)) → \(forwarder.label)")
             }
             Spacer()
+            if !model.breakpoints.paused.isEmpty {
+                Label("\(model.breakpoints.paused.count) paused", systemImage: "pause.circle.fill")
+                    .foregroundStyle(.orange)
+            }
             Text("\(model.rows.count) events")
             SettingsLink {
                 Text(license.entitlement.isPro ? "PRO" : "FREE")
@@ -230,7 +259,55 @@ struct TrafficTimeline: View {
                 }
                 .width(min: 50, ideal: 70, max: 90)
             }
+            .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in
+                if let id = ids.first, let row = model.rows.first(where: { $0.id == id }) {
+                    TimelineRowMenu(model: model, row: row)
+                }
+            }
         }
+    }
+}
+
+/// Right-click actions for a timeline row: the Pro tools that apply to it.
+struct TimelineRowMenu: View {
+    let model: CaptureViewModel
+    let row: TrafficRow
+
+    var body: some View {
+        switch row.event {
+        case .httpExchange(let exchange):
+            Button("Add Breakpoint for \(exchange.method) \(BreakpointLabel.path(exchange.url))") {
+                _ = model.addBreakpoint(for: row)
+            }
+            Button("Copy URL") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(exchange.url, forType: .string)
+            }
+        case .mqtt(let capture):
+            if case .publish = capture.event.packet {
+                Button("Replay…") {
+                    if model.prepareReplay(of: row) { model.composer.isPresented = true }
+                }
+            }
+            if let topic = capture.event.resolvedTopic {
+                Button("Publish to \(topic)…") {
+                    model.preparePublish(toTopic: topic)
+                    model.composer.isPresented = true
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+enum BreakpointLabel {
+    /// The path of a URL, shortened for a menu item.
+    static func path(_ url: String) -> String {
+        let withoutScheme = url.components(separatedBy: "://").last ?? url
+        let path = withoutScheme.firstIndex(of: "/").map { String(withoutScheme[$0...]) } ?? "/"
+        let trimmed = path.split(separator: "?").first.map(String.init) ?? path
+        return trimmed.count > 40 ? "…" + trimmed.suffix(39) : trimmed
     }
 }
 
@@ -324,12 +401,24 @@ struct TopicLabel: View {
 struct TopicDetailView: View {
     let tree: TopicTree
     let topic: TopicNode.ID?
+    var onPublish: ((String) -> Void)?
 
     var body: some View {
         if let topic, let node = tree.node(for: topic) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(node.id).font(.headline.monospaced()).textSelection(.enabled)
+                    HStack {
+                        Text(node.id).font(.headline.monospaced()).textSelection(.enabled)
+                        Spacer()
+                        if let onPublish {
+                            Button {
+                                onPublish(node.id)
+                            } label: {
+                                Label("Publish…", systemImage: "paperplane")
+                            }
+                            .help("Send a message to this topic (Pro)")
+                        }
+                    }
                     HStack(spacing: 12) {
                         Text("\(node.messageCount) messages here, \(node.totalCount) including subtopics")
                         if node.retained { Label("Retained", systemImage: "pin.fill") }

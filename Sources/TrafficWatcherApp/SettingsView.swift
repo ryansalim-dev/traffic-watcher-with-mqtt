@@ -11,7 +11,7 @@ struct SettingsView: View {
     let helper: SystemProxyHelper
     @State var tab: Tab = .proxy
 
-    enum Tab: Hashable { case proxy, mqtt, certificate, license }
+    enum Tab: Hashable { case proxy, mqtt, breakpoints, certificate, license }
 
     var body: some View {
         TabView(selection: $tab) {
@@ -21,6 +21,9 @@ struct SettingsView: View {
             MQTTSettings(model: model)
                 .tabItem { Label("MQTT", systemImage: "antenna.radiowaves.left.and.right") }
                 .tag(Tab.mqtt)
+            BreakpointSettings(center: model.breakpoints)
+                .tabItem { Label("Breakpoints", systemImage: "pause.circle") }
+                .tag(Tab.breakpoints)
             CertificateSettings(model: model, certificates: certificates)
                 .tabItem { Label("Certificate", systemImage: "checkmark.seal") }
                 .tag(Tab.certificate)

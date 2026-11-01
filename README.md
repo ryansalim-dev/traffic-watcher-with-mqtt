@@ -4,20 +4,20 @@ A native macOS debugging proxy for app developers, with HTTP(S) and MQTT as equa
 
 ## Status
 
-Early development. The MQTT decoder, the capture proxy engine, HTTPS interception, MQTT over WebSocket and TLS, the capture store and a first version of the macOS app are in place.
+Early development. The MQTT decoder, the capture proxy engine, HTTPS interception, MQTT over WebSocket and TLS, the capture store, the macOS app and the first Pro tools (HTTP breakpoints, MQTT publish and replay) are in place.
 
 ## Layout
 
 | Module | What it does |
 | --- | --- |
-| `MQTTCore` | Packet model, MQTT 5 properties, packet decoder, streaming decoder for chunked TCP or WebSocket data, and `MQTTSession`, which tracks the protocol version, client ID and per-direction topic aliases for one connection |
+| `MQTTCore` | Packet model, MQTT 5 properties, packet decoder, streaming decoder for chunked TCP or WebSocket data, an encoder for the packets a client sends, and `MQTTSession`, which tracks the protocol version, client ID and per-direction topic aliases for one connection |
 | `TLSMitm` | `CertificateAuthority` generates a local root (P-256, PEM/DER export) and issues per-host leaf certificates for DNS names or IPs. `TLSInterceptor` caches a TLS context per host and holds the bypass list for pinned hosts |
-| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. WebSocket upgrades (over HTTP or decrypted HTTPS) are relayed with every frame decoded: `mqtt*` subprotocols produce MQTT events, others produce `webSocketMessage` events. `MQTTForwarder` relays a local port to one broker, optionally terminating and re-encrypting TLS, and decodes every packet. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
+| `ProxyCore` | SwiftNIO engine. `HTTPProxyServer` forwards plain HTTP and records each exchange. With an interceptor configured it decrypts `CONNECT` tunnels and records HTTPS exchanges too; bypassed hosts are relayed untouched, and clients that reject the certificate are reported. WebSocket upgrades (over HTTP or decrypted HTTPS) are relayed with every frame decoded: `mqtt*` subprotocols produce MQTT events, others produce `webSocketMessage` events. `MQTTForwarder` relays a local port to one broker, optionally terminating and re-encrypting TLS, and decodes every packet. `MQTTPublisher` connects to a broker as a client (3.1.1 or 5, optional TLS) and publishes at QoS 0, 1 or 2, feeding its own traffic into the capture. `BreakpointRule` and `HTTPBreakpointHandler` let the proxy pause matching requests and responses for editing or aborting. Events go to a `CaptureSink` such as `CaptureLog` or `AsyncStreamCaptureSink` |
 | `CaptureStore` | SQLite store and `CaptureSink`. Groups events into sessions, keeps MQTT as raw frames that are decoded again on load, searches URLs, headers, text bodies, topics and payloads with FTS5, and exports HAR 1.2 and MQTT JSON Lines |
 | `Licensing` | Pro licenses through the Lemon Squeezy License API (activate, validate, deactivate), with no backend of our own. Keys for other stores or products are refused. `Entitlement.evaluate` applies the rules: a license covers versions released within 12 months of purchase, keeps working offline for 30 days after the last check, and the free tier keeps the 3 newest sessions. Stored in the keychain |
 | `HelperCore`, `TrafficWatcherHelper` | A root helper the app installs with `SMAppService`. While capturing, it points the HTTP and HTTPS proxy of every enabled network service at Traffic Watcher. It changes only those keys, keeps a backup on disk, and restores the previous settings when capture stops, when the app quits or crashes (the XPC connection closes), or at the next boot. It accepts connections only from the Traffic Watcher app signed by the same team |
-| `AppCore` | Everything behind the app that doesn't need SwiftUI, so it is tested on Linux too: `CaptureEngine` (proxy plus MQTT forwarders on one event loop group), `CertificateStorage`, `CaptureViewModel`, the MQTT `TopicTree`, body formatting and `SampleTraffic` |
-| `TrafficWatcherApp` | The SwiftUI app: timeline with sections and search, inspectors for HTTP, MQTT and WebSocket, a live MQTT topic tree, a one-click bypass for pinned hosts, settings for the proxy, MQTT brokers and the root certificate (including installing it in the Simulator), and HAR and MQTT exports |
+| `AppCore` | Everything behind the app that doesn't need SwiftUI, so it is tested on Linux too: `CaptureEngine` (proxy plus MQTT forwarders on one event loop group), `CertificateStorage`, `CaptureViewModel`, the MQTT `TopicTree`, body formatting, `SampleTraffic`, and the Pro tools' state: `BreakpointCenter` (rules and paused exchanges) and `MQTTComposer` (publish and replay) |
+| `TrafficWatcherApp` | The SwiftUI app: timeline with sections and search, inspectors for HTTP, MQTT and WebSocket, a live MQTT topic tree, a one-click bypass for pinned hosts, settings for the proxy, MQTT brokers and the root certificate (including installing it in the Simulator), HAR and MQTT exports, and the Pro tools: a breakpoint editor for paused requests and responses, breakpoint rules, and a Publish sheet that also replays captured messages |
 
 ### Decrypt HTTPS
 
@@ -41,6 +41,14 @@ for await event in sink.events { print(event) }
 ```
 
 For MQTT over TLS, pass `tls: .init(interceptor: interceptor)`. The port then defaults to 8883, and the app connects to `localhost` with the proxy's root CA trusted.
+
+### Publish an MQTT message
+
+```swift
+let publisher = MQTTPublisher(group: group, sink: sink)   // sink: nil to skip capturing
+let target = MQTTBrokerTarget(host: "test.mosquitto.org", version: .v5)
+try await publisher.publish([MQTTOutgoingMessage(topic: "demo/hello", payload: Array("hi".utf8), qos: .atLeastOnce)], to: target)
+```
 
 ## Develop
 
