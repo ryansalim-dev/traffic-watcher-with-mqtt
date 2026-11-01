@@ -12,6 +12,7 @@ struct ContentView: View {
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
     @State var showInspector = true
+    @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
 
     enum MQTTMode: String, CaseIterable, Identifiable {
         case packets = "Packets", topics = "Topics"
@@ -19,21 +20,25 @@ struct ContentView: View {
     }
 
     private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
+    private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty }
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(model: model)
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+            SidebarView(model: model, license: license)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 228)
         } detail: {
             Group {
                 if showsTopics {
                     TopicTreeView(tree: model.topicTree, selection: $selectedTopic)
+                } else if showsSetup {
+                    SetupView(model: model)
                 } else {
-                    TrafficTimeline(model: model)
+                    TrafficTimeline(model: model, density: density)
+                        .safeAreaInset(edge: .top, spacing: 0) { FilterBar(model: model) }
                 }
             }
-            .frame(minWidth: 420)
-            .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search URLs, headers, bodies, topics, payloads")
+            .frame(minWidth: 460)
+            .searchable(text: $model.searchText, placement: .toolbar, prompt: "Filter URLs, headers, topics, payloads")
             .toolbar {
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
@@ -55,7 +60,7 @@ struct ContentView: View {
                         InspectorView(model: model)
                     }
                 }
-                .inspectorColumnWidth(min: 320, ideal: 460, max: 800)
+                .inspectorColumnWidth(min: 320, ideal: 420, max: 800)
                 .toolbar {
                     ToolbarItem {
                         Button {
@@ -69,9 +74,10 @@ struct ContentView: View {
                 }
             }
         }
+        .tint(Theme.accent)
         .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                CaptureToggle(model: model)
+            ToolbarItem(placement: .navigation) {
+                RecordingCapsule(model: model)
             }
             ToolbarItem(placement: .primaryAction) {
                 BreakpointsToggle(center: model.breakpoints)
@@ -91,9 +97,6 @@ struct ContentView: View {
         .sheet(item: Binding(get: { model.breakpoints.paused.first }, set: { _ in })) { item in
             BreakpointEditor(center: model.breakpoints, item: item)
                 .id(item.id)
-        }
-        .safeAreaInset(edge: .bottom) {
-            StatusBar(model: model, license: license)
         }
         .task {
             model.sessionLimit = license.sessionLimit
@@ -115,7 +118,10 @@ struct ContentView: View {
     }
 }
 
-struct CaptureToggle: View {
+// MARK: Toolbar
+
+/// Start and stop capture. While recording it shows the elapsed time, recent activity and the event count.
+struct RecordingCapsule: View {
     let model: CaptureViewModel
 
     var body: some View {
@@ -128,77 +134,188 @@ struct CaptureToggle: View {
                 }
             }
         } label: {
-            Label(model.isCapturing ? "Stop" : "Start",
-                  systemImage: model.isCapturing ? "stop.circle.fill" : "record.circle")
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle()
+                        .fill((model.isCapturing ? Theme.failure : Theme.accent).opacity(0.18))
+                        .frame(width: 22, height: 22)
+                    if model.isCapturing {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Theme.failure).frame(width: 8, height: 8)
+                    } else {
+                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                    }
+                }
+                if let started = model.captureStartedAt {
+                    TimelineView(.periodic(from: started, by: 1)) { context in
+                        HStack(spacing: 9) {
+                            HStack(spacing: 6) {
+                                StatusDot(color: Theme.failure, halo: true)
+                                Text("Recording").fontWeight(.semibold)
+                            }
+                            Text(Self.elapsed(from: started, to: context.date))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                            Sparkline(values: model.activity(now: context.date))
+                                .frame(width: 56, height: 16)
+                            Text("\(model.rows.count.formatted()) events")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("Start Recording").fontWeight(.semibold)
+                }
+            }
+            .font(.system(size: 12.5))
+            .lineLimit(1)
+            .padding(.leading, 4)
+            .padding(.trailing, 12)
+            .frame(height: 28)
+            .background(Theme.fill, in: Capsule())
+            .contentShape(Capsule())
         }
-        .tint(model.isCapturing ? .red : .accentColor)
-        .help(model.isCapturing ? "Stop capturing (⌘R)" : "Start the proxy and MQTT forwarders (⌘R)")
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(model.isCapturing ? "Stop recording (⌘R)" : "Start the proxy and MQTT forwarders (⌘R)")
+        .accessibilityLabel(model.isCapturing ? "Stop recording" : "Start recording")
+    }
+
+    static func elapsed(from start: Date, to now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 }
 
-struct StatusBar: View {
-    let model: CaptureViewModel
-    let license: LicenseManager
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Circle()
-                .fill(model.isCapturing ? Color.green : Color.secondary)
-                .frame(width: 8, height: 8)
-            if let port = model.proxyPort {
-                Text("HTTP proxy on \(model.configuration.allowRemoteDevices ? "all interfaces" : "127.0.0.1"):\(String(port))")
-            } else {
-                Text("Not capturing")
-            }
-            ForEach(model.isCapturing ? model.configuration.forwarders : []) { forwarder in
-                Text("MQTT :\(String(forwarder.listenPort)) → \(forwarder.label)")
-            }
-            Spacer()
-            if !model.breakpoints.paused.isEmpty {
-                Label("\(model.breakpoints.paused.count) paused", systemImage: "pause.circle.fill")
-                    .foregroundStyle(.orange)
-            }
-            Text("\(model.rows.count) events")
-            SettingsLink {
-                Text(license.entitlement.isPro ? "PRO" : "FREE")
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background((license.entitlement.isPro ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
-                    .foregroundStyle(license.entitlement.isPro ? Color.accentColor : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(license.summary)
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
-    }
-}
-
-struct SidebarView: View {
+/// One-click filters above the timeline, plus the host picked in the sidebar.
+struct FilterBar: View {
     @Bindable var model: CaptureViewModel
 
     var body: some View {
+        HStack(spacing: 4) {
+            ForEach(QuickFilter.allCases) { filter in
+                FilterChip(title: filter.title, swatch: swatch(for: filter), isOn: model.quickFilter == filter) {
+                    model.quickFilter = filter
+                }
+            }
+            if let host = model.hostFilter {
+                Divider().frame(height: 14).padding(.horizontal, 4)
+                Button {
+                    model.hostFilter = nil
+                } label: {
+                    HStack(spacing: 5) {
+                        HostMonogram(host: host, size: 14)
+                        Text(host)
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(Theme.accent.opacity(0.14), in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Show every host again")
+            }
+            Spacer(minLength: 8)
+            Text(model.visibleRows.count == model.rows.count
+                 ? "\(model.rows.count.formatted()) events"
+                 : "\(model.visibleRows.count.formatted()) of \(model.rows.count.formatted())")
+                .font(.system(size: 11.5))
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    }
+
+    private func swatch(for filter: QuickFilter) -> Color? {
+        switch filter {
+        case .all: nil
+        case .json: Theme.get
+        case .media: Theme.put
+        case .errors: Theme.failure
+        case .publish: Theme.mqtt
+        }
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let swatch: Color?
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let swatch { Circle().fill(swatch).frame(width: 6, height: 6) }
+                Text(title)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .foregroundStyle(isOn ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.secondary))
+            .background(isOn ? AnyShapeStyle(Color.primary.opacity(0.85)) : AnyShapeStyle(Color.clear), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
+// MARK: Sidebar
+
+struct SidebarView: View {
+    @Bindable var model: CaptureViewModel
+    let license: LicenseManager
+
+    var body: some View {
         List(selection: Binding(get: { model.section }, set: { model.section = $0 ?? .all })) {
-            Section("Traffic") {
+            Section("Capture") {
                 ForEach(TrafficSection.allCases) { section in
-                    Label(section.title, systemImage: section.symbol)
-                        .badge(model.count(in: section))
-                        .tag(section)
+                    Label {
+                        Text(section.title)
+                    } icon: {
+                        Image(systemName: section.symbol).foregroundStyle(color(for: section))
+                    }
+                    .badge(badge(for: section))
+                    .tag(section)
+                }
+            }
+            let hosts = model.topHosts()
+            if !hosts.isEmpty {
+                Section("Hosts") {
+                    ForEach(hosts) { entry in
+                        HostRow(entry: entry, isOn: model.hostFilter == entry.host) {
+                            model.hostFilter = model.hostFilter == entry.host ? nil : entry.host
+                        }
+                    }
                 }
             }
             if !model.configuration.forwarders.isEmpty {
-                Section("MQTT Brokers") {
+                Section("Brokers") {
                     ForEach(model.configuration.forwarders) { forwarder in
-                        VStack(alignment: .leading) {
-                            Text(forwarder.label)
-                            Text("Connect your app to localhost:\(String(forwarder.listenPort))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: 9) {
+                            StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 4) {
+                                    Text(forwarder.brokerHost).lineLimit(1)
+                                    if forwarder.useTLS {
+                                        Text("TLS").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Text(":\(String(forwarder.listenPort)) → :\(String(forwarder.brokerPort))\(model.isCapturing ? "" : " · idle")")
+                                    .font(.system(size: 11))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
+                        .padding(.vertical, 2)
+                        .help("Connect your app to localhost:\(String(forwarder.listenPort)) to capture \(forwarder.label)")
                     }
                 }
             }
@@ -206,10 +323,15 @@ struct SidebarView: View {
                 Section("Rejected Certificates") {
                     ForEach(model.pinnedHosts, id: \.self) { host in
                         HStack {
-                            Label(host, systemImage: "lock.trianglebadge.exclamationmark")
+                            Label {
+                                Text(host).lineLimit(1).truncationMode(.middle)
+                            } icon: {
+                                Image(systemName: "lock.trianglebadge.exclamationmark").foregroundStyle(Theme.failure)
+                            }
                             Spacer()
                             Button("Bypass") { model.bypass(host: host) }
                                 .buttonStyle(.borderless)
+                                .controlSize(.small)
                                 .help("Stop decrypting \(host); its traffic is relayed untouched")
                         }
                     }
@@ -217,54 +339,412 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SidebarFooter(model: model, license: license)
+        }
+    }
+
+    private func color(for section: TrafficSection) -> Color {
+        switch section {
+        case .all, .http: Theme.accent
+        case .mqtt: Theme.mqtt
+        case .webSocket: Theme.webSocket
+        case .issues: Theme.failure
+        }
+    }
+
+    private func badge(for section: TrafficSection) -> Text? {
+        let count = model.count(in: section)
+        guard count > 0 else { return nil }
+        let text = Text(count.formatted()).monospacedDigit()
+        return section == .issues ? text.foregroundStyle(Theme.failure).fontWeight(.semibold) : text
     }
 }
 
+struct HostRow: View {
+    let entry: HostCount
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                HostMonogram(host: entry.host)
+                Text(entry.host)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(isOn ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary))
+                    .fontWeight(isOn ? .semibold : .regular)
+                Spacer(minLength: 4)
+                Text(entry.count.formatted())
+                    .font(.system(size: 11.5))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isOn ? "Show every host" : "Show only \(entry.host)")
+    }
+}
+
+/// A rounded tile with the host's first letter, colored consistently per host.
+struct HostMonogram: View {
+    let host: String
+    var size: CGFloat = 18
+
+    var body: some View {
+        Text(String(host.first.map { $0.uppercased() } ?? "?"))
+            .font(.system(size: size * 0.56, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Theme.monogramColor(for: host), in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// Proxy status and address, paused breakpoints and the license, pinned under the sidebar.
+struct SidebarFooter: View {
+    let model: CaptureViewModel
+    let license: LicenseManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !model.breakpoints.paused.isEmpty {
+                Label("\(model.breakpoints.paused.count) paused at breakpoints", systemImage: "pause.circle.fill")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Theme.warning)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    if let address {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(address, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc").font(.system(size: 11))
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help("Copy the proxy address")
+                    }
+                }
+                Text(detail)
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.fill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            SettingsLink {
+                HStack(spacing: 8) {
+                    LicenseChip(isPro: license.entitlement.isPro)
+                    Text(license.entitlement.isPro ? "Wiretide Pro" : "Free plan · Upgrade")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(license.summary)
+        }
+        .padding(12)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    }
+
+    private var title: String {
+        guard model.isCapturing else { return "Proxy idle" }
+        return model.systemProxyActive ? "System proxy on" : "Proxy running"
+    }
+
+    private var address: String? {
+        model.proxyPort.map { "\(model.configuration.allowRemoteDevices ? "0.0.0.0" : "127.0.0.1"):\(String($0))" }
+    }
+
+    private var detail: String {
+        let port = String(model.proxyPort ?? model.configuration.proxyPort)
+        let host = model.configuration.allowRemoteDevices ? "All interfaces" : "127.0.0.1"
+        let https = model.configuration.decryptHTTPS ? "HTTPS decrypted" : "HTTPS relayed"
+        return "\(host):\(port) · \(https)"
+    }
+}
+
+struct LicenseChip: View {
+    let isPro: Bool
+
+    var body: some View {
+        Text(isPro ? "PRO" : "FREE")
+            .font(.system(size: 10, weight: .bold))
+            .kerning(0.5)
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .foregroundStyle(isPro ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .background(
+                isPro
+                    ? AnyShapeStyle(LinearGradient(colors: [Theme.accent.opacity(0.32), Theme.mqtt.opacity(0.28)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(Theme.fill),
+                in: Capsule())
+    }
+}
+
+// MARK: Timeline
+
 struct TrafficTimeline: View {
     @Bindable var model: CaptureViewModel
+    let density: RowDensity
 
     var body: some View {
         let rows = model.visibleRows
         if rows.isEmpty {
             ContentUnavailableView {
-                Label(model.searchText.isEmpty ? "No traffic yet" : "No matches", systemImage: "waveform.path.ecg")
+                Label("No matches", systemImage: "line.3.horizontal.decrease.circle")
             } description: {
-                Text(model.isCapturing
-                     ? "Point your app or device at the proxy, or at an MQTT forwarder."
-                     : "Press Start to begin capturing.")
+                Text("Nothing captured so far matches the search and filters.")
+            } actions: {
+                Button("Clear Filters") {
+                    model.searchText = ""
+                    model.quickFilter = .all
+                    model.hostFilter = nil
+                }
             }
         } else {
+            let longest = rows.lazy.compactMap(\.duration).max() ?? 1
             Table(rows, selection: $model.selection) {
-                TableColumn("Time") { row in
-                    Text(row.time, format: .dateTime.hour().minute().second().secondFraction(.fractional(3)))
-                        .monospacedDigit()
-                }
-                .width(min: 80, ideal: 95, max: 110)
                 TableColumn("") { row in
-                    KindBadge(row: row)
+                    StatusDot(color: Theme.color(for: row.tone))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: density.contentHeight)
                 }
-                .width(min: 70, ideal: 80, max: 100)
-                TableColumn("Host", value: \.host)
-                    .width(min: 80, ideal: 150)
-                TableColumn("Summary") { row in
-                    Text(row.summary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(row.isIssue ? Color.red : Color.primary)
+                .width(12)
+                TableColumn("Type") { row in
+                    TypePill(text: row.pill, color: Theme.color(forPill: row.pill, kind: row.kind))
                 }
+                .width(64)
+                TableColumn("Host / Path") { row in
+                    HostPathCell(row: row)
+                }
+                .width(min: 200, ideal: 420)
+                TableColumn("Code") { row in
+                    Text(row.statusCode.map(String.init) ?? "")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.color(forStatus: row.statusCode))
+                }
+                .width(min: 32, ideal: 36, max: 44)
+                TableColumn("Duration") { row in
+                    if let duration = row.duration {
+                        DurationCell(duration: duration, longest: longest)
+                    }
+                }
+                .width(min: 90, ideal: 120, max: 160)
                 TableColumn("Size") { row in
-                    Text(row.size > 0 ? Formatting.byteCount(row.size) : "")
+                    Text(row.size > 0 ? Formatting.byteCount(row.size) : "—")
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(row.size > 0 ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.quaternary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .width(min: 50, ideal: 70, max: 90)
+                .width(min: 50, ideal: 64, max: 90)
+                TableColumn("Time") { row in
+                    Text(row.time, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
+                        .secondFraction(.fractional(3)))
+                        .font(Theme.monoSmall)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 80, ideal: 90, max: 110)
             }
+            .tableStyle(.inset(alternatesRowBackgrounds: true))
             .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in
                 if let id = ids.first, let row = model.rows.first(where: { $0.id == id }) {
                     TimelineRowMenu(model: model, row: row)
                 }
             }
         }
+    }
+}
+
+/// The host, dimmed, followed by the path or summary, which truncates first.
+struct HostPathCell: View {
+    let row: TrafficRow
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(row.host)
+                .foregroundStyle(.secondary)
+                .layoutPriority(1)
+            if row.kind != .http && row.kind != .webSocket && !row.host.isEmpty {
+                Text("  ›  ").foregroundStyle(.tertiary)
+            }
+            Text(row.detail)
+                .foregroundStyle(row.isIssue ? AnyShapeStyle(Theme.failure) : AnyShapeStyle(.primary))
+                .truncationMode(.tail)
+        }
+        .font(Theme.mono)
+        .lineLimit(1)
+        .help(row.summary)
+    }
+}
+
+/// A bar scaled to the slowest visible request, then the time. Slow requests turn amber.
+struct DurationCell: View {
+    let duration: TimeInterval
+    let longest: TimeInterval
+
+    var body: some View {
+        HStack(spacing: 6) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.fill)
+                    Capsule()
+                        .fill(duration > 1 ? Theme.warning : Theme.accent)
+                        .opacity(0.85)
+                        .frame(width: max(3, proxy.size.width * min(1, duration / max(longest, 0.001))))
+                }
+            }
+            .frame(height: 6)
+            Text(Formatting.duration(duration))
+                .font(.system(size: 11.5))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: Setup
+
+/// Shown before anything is captured: one primary action and the three ways to get traffic in.
+struct SetupView: View {
+    let model: CaptureViewModel
+
+    var body: some View {
+        let configuration = model.configuration
+        ScrollView {
+            VStack(spacing: 14) {
+                WaveMark()
+                    .frame(width: 88, height: 56)
+                Text(model.isCapturing ? "Waiting for traffic" : "Ready to capture")
+                    .font(.system(size: 22, weight: .semibold))
+                    .kerning(-0.3)
+                Text(model.isCapturing
+                     ? "Wiretide is listening on port \(String(model.proxyPort ?? configuration.proxyPort)). Requests and MQTT packets appear here as soon as something connects."
+                     : configuration.setSystemProxy
+                        ? "Wiretide sets itself as this Mac's proxy while recording and puts everything back when you stop."
+                        : "Point your app or device at the proxy, or at an MQTT forwarder, then start recording.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
+                if !model.isCapturing {
+                    Button {
+                        Task { await model.startCapture() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle().frame(width: 9, height: 9)
+                            Text("Start Recording")
+                            Text("⌘R").opacity(0.7)
+                        }
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .padding(.horizontal, 18)
+                        .frame(height: 36)
+                        .foregroundStyle(.white)
+                        .background(Theme.accent, in: Capsule())
+                        .shadow(color: Theme.accent.opacity(0.45), radius: 10, y: 6)
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                HStack(alignment: .top, spacing: 12) {
+                    SetupCard(symbol: "laptopcomputer", tint: Theme.accent, title: "This Mac",
+                              message: "Apps and the Simulator on this Mac go through Wiretide.",
+                              status: configuration.setSystemProxy ? "System proxy switches on with recording" : nil,
+                              link: configuration.setSystemProxy ? nil : "Turn on in Settings › Proxy")
+                    SetupCard(symbol: "iphone", tint: Theme.accent, title: "iPhone or another device",
+                              message: "Install the Wiretide certificate, then set the Wi‑Fi proxy to this Mac on port \(String(configuration.proxyPort)).",
+                              status: configuration.allowRemoteDevices ? "Accepting other devices" : nil,
+                              link: configuration.allowRemoteDevices ? nil : "Allow other devices in Settings › Proxy")
+                    SetupCard(symbol: "antenna.radiowaves.left.and.right", tint: Theme.mqtt, title: "MQTT broker",
+                              message: "Add a broker, then connect your device to the local port instead.",
+                              status: configuration.forwarders.isEmpty ? nil
+                                : "\(configuration.forwarders.count) broker\(configuration.forwarders.count == 1 ? "" : "s") ready",
+                              link: configuration.forwarders.isEmpty ? "Add one in Settings › MQTT" : nil)
+                }
+                .frame(maxWidth: 680)
+                .padding(.top, 14)
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity)
+        }
+        .defaultScrollAnchor(.center)
+    }
+}
+
+struct SetupCard: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let message: String
+    let status: String?
+    let link: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let status {
+                Label(status, systemImage: "checkmark")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.success)
+            } else if let link {
+                SettingsLink {
+                    Text("\(link) →").font(.system(size: 11.5))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
+    }
+}
+
+/// Two offset swells, Wiretide's mark for the empty state.
+struct WaveMark: View {
+    var body: some View {
+        Canvas { context, size in
+            func wave(baseline: CGFloat, amplitude: CGFloat) -> Path {
+                var path = Path()
+                let steps = 80
+                for step in 0...steps {
+                    let x = size.width * CGFloat(step) / CGFloat(steps)
+                    let y = baseline - amplitude * sin(CGFloat(step) / CGFloat(steps) * .pi * 3.2)
+                    if step == 0 {
+                        path.move(to: CGPoint(x: x, y: y))
+                    } else {
+                        path.addLine(to: CGPoint(x: x, y: y))
+                    }
+                }
+                return path
+            }
+            context.stroke(wave(baseline: size.height * 0.78, amplitude: size.height * 0.2), with: .color(Theme.accent.opacity(0.35)),
+                           style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            context.stroke(wave(baseline: size.height * 0.55, amplitude: size.height * 0.3), with: .color(Theme.accent),
+                           style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -308,30 +788,6 @@ enum BreakpointLabel {
         let path = withoutScheme.firstIndex(of: "/").map { String(withoutScheme[$0...]) } ?? "/"
         let trimmed = path.split(separator: "?").first.map(String.init) ?? path
         return trimmed.count > 40 ? "…" + trimmed.suffix(39) : trimmed
-    }
-}
-
-struct KindBadge: View {
-    let row: TrafficRow
-
-    var body: some View {
-        Text(row.badge)
-            .font(.caption2.weight(.semibold).monospaced())
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
-            .foregroundStyle(color)
-    }
-
-    private var color: Color {
-        if row.isIssue { return .red }
-        switch row.kind {
-        case .http: return .blue
-        case .mqtt: return .purple
-        case .webSocket: return .teal
-        case .tunnel: return .gray
-        case .tls: return .orange
-        }
     }
 }
 

@@ -144,6 +144,12 @@ public final class CaptureViewModel {
     public private(set) var pinnedHosts: [String] = []
 
     public var section: TrafficSection = .all
+    /// The chip selected above the timeline.
+    public var quickFilter: QuickFilter = .all
+    /// Shows only this host's events when set (from the sidebar's Hosts list).
+    public var hostFilter: String?
+    /// When the running capture started; nil while not capturing.
+    public private(set) var captureStartedAt: Date?
     public var selection: TrafficRow.ID?
     public var configuration: EngineConfiguration {
         didSet { saveConfiguration?(configuration) }
@@ -246,6 +252,7 @@ public final class CaptureViewModel {
             let port = try await engine.start(configuration)
             proxyPort = port
             isCapturing = true
+            captureStartedAt = Date()
             lastError = nil
             await updateSystemProxy(port: port)
         } catch {
@@ -259,6 +266,7 @@ public final class CaptureViewModel {
         try? await engine?.stop()
         isCapturing = false
         proxyPort = nil
+        captureStartedAt = nil
     }
 
     /// Turns the system proxy on for `port` when the configuration asks for it, or off when `port` is nil.
@@ -289,6 +297,7 @@ public final class CaptureViewModel {
             selection = nil
             searchResults = nil
             searchText = ""
+            hostFilter = nil
         } catch {
             lastError = "Could not start a new session: \(error)"
         }
@@ -331,9 +340,27 @@ public final class CaptureViewModel {
 
     // MARK: Presentation
 
-    /// Rows for the current section, narrowed by the search when there is one.
+    /// Rows for the current section, narrowed by the quick filter, host and search.
     public var visibleRows: [TrafficRow] {
-        (searchResults ?? rows).filter(section.includes)
+        let section = section, filter = quickFilter, host = hostFilter
+        return (searchResults ?? rows).filter { row in
+            section.includes(row) && filter.includes(row) && (host == nil || row.host == host)
+        }
+    }
+
+    /// The busiest hosts in this session, most events first.
+    public func topHosts(limit: Int = 6) -> [HostCount] {
+        var counts: [String: Int] = [:]
+        for row in rows where !row.host.isEmpty { counts[row.host, default: 0] += 1 }
+        return counts.map { HostCount(host: $0.key, count: $0.value) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.host < $1.host }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Events per bucket over the last `buckets × bucketLength` seconds, for the activity sparkline.
+    public func activity(buckets: Int = 24, bucketLength: TimeInterval = 5, now: Date = Date()) -> [Int] {
+        ActivityHistogram.counts(of: rows.map(\.time), buckets: buckets, bucketLength: bucketLength, endingAt: now)
     }
 
     public var selectedRow: TrafficRow? {

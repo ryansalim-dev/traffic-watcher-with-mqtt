@@ -58,23 +58,24 @@ struct HTTPInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(exchange.method).font(.headline.monospaced())
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    TypePill(text: exchange.method.uppercased(), color: Theme.color(forPill: exchange.method.uppercased(), kind: .http),
+                             fixedWidth: nil)
                     StatusPill(code: exchange.statusCode)
                     Spacer()
-                    Text(Formatting.duration(exchange.duration)).foregroundStyle(.secondary).monospacedDigit()
+                    Text("\(Formatting.duration(exchange.duration)) · \(Formatting.byteCount(exchange.responseBody.count))")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
-                Text(exchange.url)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .lineLimit(3)
+                URLText(url: exchange.url)
                 if let error = exchange.error {
-                    Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+                    Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(Theme.failure).font(.callout)
                 }
                 if let stages = exchange.breakpoint {
                     Label(Self.breakpointNote(stages), systemImage: "pause.circle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.warning)
                         .font(.callout)
                 }
                 Picker("Part", selection: $part) {
@@ -82,9 +83,9 @@ struct HTTPInspector: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
-            .padding(12)
+            .padding(16)
 
             Divider()
 
@@ -110,25 +111,72 @@ extension HTTPInspector {
     }
 }
 
+/// Status code and reason with a colored dot, such as "● 200 OK".
 struct StatusPill: View {
     let code: Int?
 
     var body: some View {
-        Text(code.map(String.init) ?? "No response")
-            .font(.caption.weight(.semibold).monospacedDigit())
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.18), in: Capsule())
-            .foregroundStyle(color)
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(code.map { "\($0) \(Self.reason(for: $0))".trimmingCharacters(in: .whitespaces) } ?? "No response")
+                .font(.system(size: 12.5, weight: .semibold))
+                .monospacedDigit()
+        }
+        .foregroundStyle(color)
     }
 
-    private var color: Color {
-        switch code ?? 0 {
-        case 200..<300: .green
-        case 300..<400: .blue
-        case 400..<500: .orange
-        default: .red
+    private var color: Color { Theme.color(forStatus: code) }
+
+    static func reason(for code: Int) -> String {
+        switch code {
+        case 200: "OK"
+        case 201: "Created"
+        case 202: "Accepted"
+        case 204: "No Content"
+        case 206: "Partial Content"
+        case 301: "Moved Permanently"
+        case 302: "Found"
+        case 304: "Not Modified"
+        case 307: "Temporary Redirect"
+        case 308: "Permanent Redirect"
+        case 400: "Bad Request"
+        case 401: "Unauthorized"
+        case 403: "Forbidden"
+        case 404: "Not Found"
+        case 405: "Method Not Allowed"
+        case 409: "Conflict"
+        case 422: "Unprocessable Content"
+        case 429: "Too Many Requests"
+        case 500: "Internal Server Error"
+        case 502: "Bad Gateway"
+        case 503: "Service Unavailable"
+        case 504: "Gateway Timeout"
+        default: ""
         }
+    }
+}
+
+/// A URL in monospace with the host emphasized and the rest dimmed.
+struct URLText: View {
+    let url: String
+
+    var body: some View {
+        let (lead, host, rest) = Self.split(url)
+        (Text(lead).foregroundStyle(.tertiary)
+            + Text(host).foregroundStyle(.primary).fontWeight(.medium)
+            + Text(rest).foregroundStyle(.secondary))
+            .font(.system(size: 12.5, design: .monospaced))
+            .lineLimit(4)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Splits "https://host/path" into ("https://", "host", "/path").
+    static func split(_ url: String) -> (String, String, String) {
+        let schemeEnd = url.range(of: "://")?.upperBound ?? url.startIndex
+        let afterScheme = url[schemeEnd...]
+        let pathStart = afterScheme.firstIndex(of: "/") ?? url.endIndex
+        return (String(url[..<schemeEnd]), String(url[schemeEnd..<pathStart]), String(url[pathStart...]))
     }
 }
 
@@ -144,16 +192,17 @@ struct HeadersView: View {
                     ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
                         GridRow {
                             Text(header.name)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
                                 .gridColumnAlignment(.trailing)
                             Text(header.value)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .font(.callout.monospaced())
+                        .font(Theme.mono)
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
         }
     }
@@ -237,7 +286,7 @@ struct MQTTInspector: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(event.packet.type)".uppercased()).font(.headline.monospaced())
+                    TypePill(text: "\(event.packet.type)".uppercased(), color: Theme.mqtt, fixedWidth: nil)
                     Text(event.direction == .clientToBroker ? "client → broker" : "broker → client")
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -254,7 +303,7 @@ struct MQTTInspector: View {
                 }
                 Text(capture.broker).font(.callout).foregroundStyle(.secondary)
             }
-            .padding(12)
+            .padding(16)
             Divider()
             VSplitView {
                 ScrollView {
@@ -290,7 +339,7 @@ struct WebSocketInspector: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(message.opcode)".uppercased()).font(.headline.monospaced())
+                    TypePill(text: "\(message.opcode)".uppercased(), color: Theme.webSocket, fixedWidth: nil)
                     Text(message.direction == .clientToServer ? "client → server" : "server → client")
                         .foregroundStyle(.secondary)
                 }
