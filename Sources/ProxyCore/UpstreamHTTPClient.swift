@@ -7,6 +7,8 @@ import TLSMitm
 struct UpstreamResponse {
     var head: HTTPResponseHead
     var body: ByteBuffer
+    /// How long each phase took; nil if the connection never got far enough to tell.
+    var timing: HTTPTiming?
 }
 
 enum UpstreamError: Error, CustomStringConvertible {
@@ -33,8 +35,10 @@ enum UpstreamHTTPClient {
         maximumBodySize: Int
     ) -> EventLoopFuture<UpstreamResponse> {
         let promise = eventLoop.makePromise(of: UpstreamResponse.self)
+        let clock = PhaseClock()
         ClientBootstrap(group: eventLoop)
             .connectTimeout(.seconds(15))
+            .resolver(TimingResolver(eventLoop: eventLoop, clock: clock))
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let sync = channel.pipeline.syncOperations
@@ -43,8 +47,9 @@ enum UpstreamHTTPClient {
                         let sni = ipAddressBytes(host) == nil ? host : nil
                         try sync.addHandler(NIOSSLClientHandler(context: tls, serverHostname: sni))
                     }
+                    try sync.addHandler(PhaseRecorder(clock: clock))
                     try sync.addHTTPClientHandlers()
-                    try sync.addHandler(ResponseCollector(promise: promise, maximumBodySize: maximumBodySize))
+                    try sync.addHandler(ResponseCollector(promise: promise, clock: clock, maximumBodySize: maximumBodySize))
                 }
             }
             .connect(host: host, port: port)
@@ -69,13 +74,15 @@ private final class ResponseCollector: ChannelInboundHandler {
     typealias InboundIn = HTTPClientResponsePart
 
     private let promise: EventLoopPromise<UpstreamResponse>
+    private let clock: PhaseClock
     private let maximumBodySize: Int
     private var head: HTTPResponseHead?
     private var body: ByteBuffer?
     private var done = false
 
-    init(promise: EventLoopPromise<UpstreamResponse>, maximumBodySize: Int) {
+    init(promise: EventLoopPromise<UpstreamResponse>, clock: PhaseClock, maximumBodySize: Int) {
         self.promise = promise
+        self.clock = clock
         self.maximumBodySize = maximumBodySize
     }
 
@@ -83,6 +90,7 @@ private final class ResponseCollector: ChannelInboundHandler {
         guard !done else { return }
         switch unwrapInboundIn(data) {
         case .head(let head):
+            if clock.firstByte == nil { clock.firstByte = .now() }
             self.head = head
             body = context.channel.allocator.buffer(capacity: 0)
         case .body(var chunk):
@@ -93,7 +101,8 @@ private final class ResponseCollector: ChannelInboundHandler {
             }
         case .end:
             if let head, let body {
-                finish(.success(UpstreamResponse(head: head, body: body)))
+                clock.finished = .now()
+                finish(.success(UpstreamResponse(head: head, body: body, timing: clock.timing)))
             } else {
                 finish(.failure(UpstreamError.connectionClosedEarly))
             }
