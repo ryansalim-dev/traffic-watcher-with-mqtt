@@ -528,7 +528,7 @@ struct TrafficTimeline: View {
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
-                .width(min: 240, ideal: 640)
+                .width(min: 200, ideal: 360)
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
