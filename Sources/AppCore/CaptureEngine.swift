@@ -110,6 +110,7 @@ public final class CaptureEngine: @unchecked Sendable {
     private var proxy: HTTPProxyServer?
     private var forwarders: [UUID: MQTTForwarder] = [:]
     private var _runningConfiguration: EngineConfiguration?
+    private var _breakpoints: HTTPBreakpointHandler?
 
     public init(authority: CertificateAuthority, threads: Int = System.coreCount) {
         self.authority = authority
@@ -125,6 +126,17 @@ public final class CaptureEngine: @unchecked Sendable {
     }
 
     public var isRunning: Bool { lock.withLock { proxy != nil } }
+
+    /// Pauses matching HTTP exchanges for editing. Read when capture starts.
+    public var breakpoints: HTTPBreakpointHandler? {
+        get { lock.withLock { _breakpoints } }
+        set { lock.withLock { _breakpoints = newValue } }
+    }
+
+    /// A publisher on this engine's event loops whose traffic lands in the capture stream.
+    public func makePublisher() -> MQTTPublisher {
+        MQTTPublisher(group: group, sink: sink)
+    }
     public var runningConfiguration: EngineConfiguration? { lock.withLock { _runningConfiguration } }
 
     /// Starts the proxy and every forwarder. Returns the proxy's bound port. Stops anything
@@ -136,6 +148,7 @@ public final class CaptureEngine: @unchecked Sendable {
 
         var proxyConfiguration = HTTPProxyServer.Configuration()
         proxyConfiguration.interceptor = configuration.decryptHTTPS ? interceptor : nil
+        proxyConfiguration.breakpoints = breakpoints
         let proxy = HTTPProxyServer(group: group, sink: sink, configuration: proxyConfiguration)
         let port = try await proxy.start(host: configuration.listenHost, port: configuration.proxyPort)
 

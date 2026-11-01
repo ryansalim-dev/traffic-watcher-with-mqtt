@@ -17,6 +17,8 @@ public final class HTTPProxyServer: @unchecked Sendable {
         public var interceptor: TLSInterceptor?
         /// How the proxy verifies real servers when it re-encrypts intercepted traffic.
         public var upstreamTLS: TLSConfiguration = .makeClientConfiguration()
+        /// Pauses matching exchanges so they can be edited. Nil never pauses.
+        public var breakpoints: HTTPBreakpointHandler?
         public init() {}
     }
 
@@ -196,77 +198,145 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
 
     private func forward(context: ChannelHandlerContext, head: HTTPRequestHead, body: ByteBuffer, startedAt: Date) {
         let id = UUID()
-        let requestHeaders = head.headers.map { CapturedHeader(name: $0.name, value: $0.value) }
-        let requestBody = Array(body.readableBytesView)
+        let original = HTTPRequestDraft(
+            method: head.method.rawValue,
+            url: origin?.url(for: head.uri) ?? head.uri,
+            headers: head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
+            body: Array(body.readableBytesView)
+        )
+        var paused: BreakpointStages = []
+        let sink = self.sink
 
-        let url = origin?.url(for: head.uri) ?? head.uri
-
-        func record(status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?) {
+        func record(_ request: HTTPRequestDraft, status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?) {
             sink.record(.httpExchange(HTTPExchange(
                 id: id,
                 startedAt: startedAt,
                 duration: Date().timeIntervalSince(startedAt),
-                method: head.method.rawValue,
-                url: url,
-                requestHeaders: requestHeaders,
-                requestBody: requestBody,
+                method: request.method,
+                url: request.url,
+                requestHeaders: request.headers,
+                requestBody: request.body,
                 statusCode: status,
                 responseHeaders: responseHeaders,
                 responseBody: responseBody,
-                error: error
+                error: error,
+                breakpoint: paused.isEmpty ? nil : paused
             )))
         }
 
-        let target: AbsoluteHTTPTarget
+        let originalTarget: AbsoluteHTTPTarget
         if let origin {
-            target = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: Self.originForm(of: head.uri))
+            originalTarget = AbsoluteHTTPTarget(host: origin.host, port: origin.port, originForm: Self.originForm(of: head.uri))
         } else if let absolute = AbsoluteHTTPTarget(head.uri) {
-            target = absolute
+            originalTarget = absolute
         } else {
             let message = head.uri.lowercased().hasPrefix("https://")
                 ? "HTTPS must be sent through CONNECT"
                 : "Proxy requests need an absolute http:// URL"
-            record(status: 400, responseHeaders: [], responseBody: [], error: message)
+            record(original, status: 400, responseHeaders: [], responseBody: [], error: message)
             respondWithError(context: context, status: .badRequest, message: message, keepAlive: head.isKeepAlive)
             return
         }
 
-        var upstreamHead = HTTPRequestHead(version: .http1_1, method: head.method, uri: target.originForm)
-        upstreamHead.headers = head.headers.removingHopByHop()
-        if !upstreamHead.headers.contains(name: "Host") {
-            upstreamHead.headers.add(name: "Host", value: target.authority)
-        }
-        upstreamHead.headers.replaceOrAdd(name: "Connection", value: "close")
-        if body.readableBytes > 0 || head.headers.contains(name: "Content-Length") || head.headers.contains(name: "Transfer-Encoding") {
-            upstreamHead.headers.replaceOrAdd(name: "Content-Length", value: String(body.readableBytes))
+        let breakpoints = configuration.breakpoints
+        let stages = breakpoints?.stages(method: original.method, url: original.url) ?? []
+        let loop = context.eventLoop
+
+        let requestDecision: EventLoopFuture<BreakpointResolution<HTTPRequestDraft>>
+        if stages.contains(.request), let breakpoints {
+            paused.insert(.request)
+            let promise = loop.makePromise(of: BreakpointResolution<HTTPRequestDraft>.self)
+            promise.completeWithTask { await breakpoints.editRequest(original) }
+            requestDecision = promise.futureResult
+        } else {
+            requestDecision = loop.makeSucceededFuture(.proceed(original))
         }
 
-        UpstreamHTTPClient.send(
-            head: upstreamHead,
-            body: body,
-            host: target.host,
-            port: target.port,
-            tls: origin == nil ? nil : shared.upstreamTLS,
-            on: context.eventLoop,
-            maximumBodySize: configuration.maximumBodySize
-        ).whenComplete { result in
-            switch result {
-            case .success(let response):
-                record(
-                    status: Int(response.head.status.code),
-                    responseHeaders: response.head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
-                    responseBody: Array(response.body.readableBytesView),
-                    error: nil
-                )
-                var responseHead = HTTPResponseHead(version: head.version, status: response.head.status)
-                responseHead.headers = response.head.headers.removingHopByHop()
-                responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(response.body.readableBytes))
-                if !head.isKeepAlive { responseHead.headers.replaceOrAdd(name: "Connection", value: "close") }
-                self.writeResponse(context: context, head: responseHead, body: response.body, keepAlive: head.isKeepAlive)
-            case .failure(let error):
-                let message = String(describing: error)
-                record(status: 502, responseHeaders: [], responseBody: [], error: message)
+        requestDecision.whenSuccess { decision in
+            guard case .proceed(let request) = decision else {
+                let message = "Aborted at a breakpoint"
+                record(original, status: nil, responseHeaders: [], responseBody: [], error: message)
                 self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
+                return
+            }
+
+            // An edited URL may point somewhere else entirely, including http <-> https.
+            let target: AbsoluteHTTPTarget
+            let useTLS: Bool
+            if request.url == original.url {
+                target = originalTarget
+                useTLS = self.origin != nil
+            } else if let parsed = AbsoluteHTTPTarget.parse(url: request.url) {
+                (target, useTLS) = parsed
+            } else {
+                let message = "The edited URL isn't an absolute http:// or https:// URL"
+                record(request, status: 400, responseHeaders: [], responseBody: [], error: message)
+                self.respondWithError(context: context, status: .badRequest, message: message, keepAlive: head.isKeepAlive)
+                return
+            }
+
+            var requestHeaders = HTTPHeaders(request.headers.map { ($0.name, $0.value) })
+            if request.url != original.url, requestHeaders["Host"].first == originalTarget.authority || requestHeaders["Host"].first == originalTarget.host {
+                requestHeaders.replaceOrAdd(name: "Host", value: target.authority)
+            }
+            var upstreamHead = HTTPRequestHead(version: .http1_1, method: HTTPMethod(rawValue: request.method), uri: target.originForm)
+            upstreamHead.headers = requestHeaders.removingHopByHop()
+            if !upstreamHead.headers.contains(name: "Host") {
+                upstreamHead.headers.add(name: "Host", value: target.authority)
+            }
+            upstreamHead.headers.replaceOrAdd(name: "Connection", value: "close")
+            if !request.body.isEmpty || requestHeaders.contains(name: "Content-Length") || requestHeaders.contains(name: "Transfer-Encoding") {
+                upstreamHead.headers.replaceOrAdd(name: "Content-Length", value: String(request.body.count))
+            }
+            var upstreamBody = context.channel.allocator.buffer(capacity: request.body.count)
+            upstreamBody.writeBytes(request.body)
+
+            UpstreamHTTPClient.send(
+                head: upstreamHead,
+                body: upstreamBody,
+                host: target.host,
+                port: target.port,
+                tls: useTLS ? self.shared.upstreamTLS : nil,
+                on: loop,
+                maximumBodySize: self.configuration.maximumBodySize
+            ).whenComplete { result in
+                switch result {
+                case .success(let response):
+                    let received = HTTPResponseDraft(
+                        statusCode: Int(response.head.status.code),
+                        headers: response.head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
+                        body: Array(response.body.readableBytesView)
+                    )
+                    let responseDecision: EventLoopFuture<BreakpointResolution<HTTPResponseDraft>>
+                    if stages.contains(.response), let breakpoints {
+                        paused.insert(.response)
+                        let promise = loop.makePromise(of: BreakpointResolution<HTTPResponseDraft>.self)
+                        promise.completeWithTask { await breakpoints.editResponse(received, for: request) }
+                        responseDecision = promise.futureResult
+                    } else {
+                        responseDecision = loop.makeSucceededFuture(.proceed(received))
+                    }
+                    responseDecision.whenSuccess { decision in
+                        guard case .proceed(let final) = decision else {
+                            let message = "Response aborted at a breakpoint"
+                            record(request, status: nil, responseHeaders: [], responseBody: [], error: message)
+                            self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
+                            return
+                        }
+                        record(request, status: final.statusCode, responseHeaders: final.headers, responseBody: final.body, error: nil)
+                        var responseHead = HTTPResponseHead(version: head.version, status: HTTPResponseStatus(statusCode: final.statusCode))
+                        responseHead.headers = HTTPHeaders(final.headers.map { ($0.name, $0.value) }).removingHopByHop()
+                        responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(final.body.count))
+                        if !head.isKeepAlive { responseHead.headers.replaceOrAdd(name: "Connection", value: "close") }
+                        var responseBody = context.channel.allocator.buffer(capacity: final.body.count)
+                        responseBody.writeBytes(final.body)
+                        self.writeResponse(context: context, head: responseHead, body: responseBody, keepAlive: head.isKeepAlive)
+                    }
+                case .failure(let error):
+                    let message = String(describing: error)
+                    record(request, status: 502, responseHeaders: [], responseBody: [], error: message)
+                    self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
+                }
             }
         }
     }
@@ -557,12 +627,22 @@ struct AbsoluteHTTPTarget: Equatable {
     }
 
     init?(_ uri: String) {
-        let prefix = "http://"
+        self.init(uri, scheme: "http://", defaultPort: 80)
+    }
+
+    /// An absolute `http://` or `https://` URL, and whether it needs TLS.
+    static func parse(url: String) -> (AbsoluteHTTPTarget, useTLS: Bool)? {
+        if let plain = AbsoluteHTTPTarget(url, scheme: "http://", defaultPort: 80) { return (plain, false) }
+        if let secure = AbsoluteHTTPTarget(url, scheme: "https://", defaultPort: 443) { return (secure, true) }
+        return nil
+    }
+
+    private init?(_ uri: String, scheme prefix: String, defaultPort: Int) {
         guard uri.lowercased().hasPrefix(prefix) else { return nil }
         let rest = uri.dropFirst(prefix.count)
         let authorityEnd = rest.firstIndex { $0 == "/" || $0 == "?" || $0 == "#" } ?? rest.endIndex
         let authority = String(rest[..<authorityEnd])
-        guard let (host, port) = parseAuthority(authority, defaultPort: 80) else { return nil }
+        guard let (host, port) = parseAuthority(authority, defaultPort: defaultPort) else { return nil }
         var path = String(rest[authorityEnd...])
         if let fragment = path.firstIndex(of: "#") { path = String(path[..<fragment]) }
         if path.isEmpty || path.hasPrefix("?") { path = "/" + path }

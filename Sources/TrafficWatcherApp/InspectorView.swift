@@ -16,7 +16,9 @@ struct InspectorView: View {
                 case .httpExchange(let exchange):
                     HTTPInspector(exchange: exchange)
                 case .mqtt(let capture):
-                    MQTTInspector(capture: capture)
+                    MQTTInspector(capture: capture) {
+                        if model.prepareReplay(of: row) { model.composer.isPresented = true }
+                    }
                 case .webSocketMessage(let message):
                     WebSocketInspector(message: message)
                 case .tunnelOpened(let tunnel):
@@ -70,6 +72,11 @@ struct HTTPInspector: View {
                 if let error = exchange.error {
                     Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
                 }
+                if let stages = exchange.breakpoint {
+                    Label(Self.breakpointNote(stages), systemImage: "pause.circle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                }
                 Picker("Part", selection: $part) {
                     ForEach(Part.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -89,6 +96,16 @@ struct HTTPInspector: View {
                 BodyView(bytes: body, contentType: headers.first { $0.name.lowercased() == "content-type" }?.value)
                     .frame(minHeight: 120)
             }
+        }
+    }
+}
+
+extension HTTPInspector {
+    static func breakpointNote(_ stages: BreakpointStages) -> String {
+        switch stages {
+        case .request: "Paused at a breakpoint before sending; shown as sent"
+        case .response: "Paused at a breakpoint before returning; shown as returned"
+        default: "Paused at breakpoints; shown as sent and returned"
         }
     }
 }
@@ -213,6 +230,7 @@ struct BodyView: View {
 
 struct MQTTInspector: View {
     let capture: MQTTCaptureEvent
+    var onReplay: (() -> Void)?
 
     var body: some View {
         let event = capture.event
@@ -224,6 +242,15 @@ struct MQTTInspector: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("MQTT \(event.version)").font(.caption).foregroundStyle(.secondary)
+                    if case .publish = event.packet, let onReplay {
+                        Button {
+                            onReplay()
+                        } label: {
+                            Label("Replay…", systemImage: "arrow.clockwise")
+                        }
+                        .controlSize(.small)
+                        .help("Send this message again, edited if you like (Pro)")
+                    }
                 }
                 Text(capture.broker).font(.callout).foregroundStyle(.secondary)
             }

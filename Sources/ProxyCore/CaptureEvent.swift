@@ -25,10 +25,14 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     public var responseHeaders: [CapturedHeader]
     public var responseBody: [UInt8]
     public var error: String?
+    /// Where a breakpoint paused this exchange; the request and response are what was actually sent,
+    /// after any edits. Nil when it went straight through.
+    public var breakpoint: BreakpointStages?
 
     public init(id: UUID = UUID(), startedAt: Date, duration: TimeInterval, method: String, url: String,
                 requestHeaders: [CapturedHeader], requestBody: [UInt8], statusCode: Int?,
-                responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil) {
+                responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil,
+                breakpoint: BreakpointStages? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.duration = duration
@@ -40,6 +44,7 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
         self.responseHeaders = responseHeaders
         self.responseBody = responseBody
         self.error = error
+        self.breakpoint = breakpoint
     }
 }
 

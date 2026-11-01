@@ -3,6 +3,7 @@ import AppCore
 import AppKit
 import CaptureStore
 import Licensing
+import ProxyCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -60,6 +61,8 @@ enum AppSetup {
     case failed(String)
 
     private static let configurationKey = "engineConfiguration"
+    private static let breakpointRulesKey = "breakpointRules"
+    private static let publishTargetKey = "publishTarget"
 
     var model: CaptureViewModel? {
         if case .ready(let model, _, _, _) = self { model } else { nil }
@@ -85,16 +88,34 @@ enum AppSetup {
                let saved = try? JSONDecoder().decode(EngineConfiguration.self, from: data) {
                 configuration = saved
             }
+            let defaults = UserDefaults.standard
+            let rules = defaults.data(forKey: breakpointRulesKey).flatMap { try? JSONDecoder().decode([BreakpointRule].self, from: $0) } ?? []
+            let breakpoints = BreakpointCenter(rules: rules) { rules in
+                if let data = try? JSONEncoder().encode(rules) { defaults.set(data, forKey: breakpointRulesKey) }
+            }
+            let engine = CaptureEngine(authority: authority)
+            let publishTarget = defaults.data(forKey: publishTargetKey).flatMap { try? JSONDecoder().decode(MQTTBrokerTarget.self, from: $0) }
+                ?? MQTTBrokerTarget(host: configuration.forwarders.first?.brokerHost ?? "localhost",
+                                    port: configuration.forwarders.first?.brokerPort,
+                                    useTLS: configuration.forwarders.first?.useTLS ?? false)
+            let composer = MQTTComposer(publisher: engine.makePublisher(), target: publishTarget) { target in
+                // The password stays in memory only.
+                var saved = target
+                saved.password = nil
+                if let data = try? JSONEncoder().encode(saved) { defaults.set(data, forKey: publishTargetKey) }
+            }
             let model = CaptureViewModel(
                 store: store,
-                engine: CaptureEngine(authority: authority),
+                engine: engine,
                 configuration: configuration,
                 systemProxy: HelperConnection(),
                 saveConfiguration: { configuration in
                     if let data = try? JSONEncoder().encode(configuration) {
                         UserDefaults.standard.set(data, forKey: configurationKey)
                     }
-                }
+                },
+                breakpoints: breakpoints,
+                composer: composer
             )
             let license = LicenseManager(
                 configuration: LicenseConfiguration(infoDictionary: Bundle.main.infoDictionary ?? [:]),
@@ -127,6 +148,18 @@ struct CaptureCommands: Commands {
 
             Button("New Session") { model?.newSession() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(model == nil)
+
+            Divider()
+
+            Button(model?.breakpoints.isEnabled == true ? "Turn Breakpoints Off" : "Turn Breakpoints On") {
+                model?.breakpoints.isEnabled.toggle()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(model == nil)
+
+            Button("Publish MQTT Message…") { model?.composer.isPresented = true }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(model == nil)
 
             Divider()

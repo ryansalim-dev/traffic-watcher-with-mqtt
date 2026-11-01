@@ -1,5 +1,6 @@
 import CaptureStore
 import Foundation
+import Licensing
 import MQTTCore
 import Observation
 import ProxyCore
@@ -157,6 +158,10 @@ public final class CaptureViewModel {
     }
 
     public let store: CaptureStore
+    /// HTTP breakpoints (Pro).
+    public let breakpoints: BreakpointCenter
+    /// MQTT publish and replay (Pro).
+    public let composer: MQTTComposer
     private let engine: CaptureEngine?
     private let saveConfiguration: ((EngineConfiguration) -> Void)?
     private let systemProxy: SystemProxyControlling?
@@ -167,9 +172,15 @@ public final class CaptureViewModel {
     ///   - saveConfiguration: called whenever the configuration changes, to persist it.
     public init(store: CaptureStore, engine: CaptureEngine?, configuration: EngineConfiguration = .init(),
                 systemProxy: SystemProxyControlling? = nil,
-                saveConfiguration: ((EngineConfiguration) -> Void)? = nil) {
+                saveConfiguration: ((EngineConfiguration) -> Void)? = nil,
+                breakpoints: BreakpointCenter? = nil,
+                composer: MQTTComposer? = nil) {
         self.store = store
         self.engine = engine
+        let breakpoints = breakpoints ?? BreakpointCenter()
+        self.breakpoints = breakpoints
+        self.composer = composer ?? MQTTComposer(publisher: engine?.makePublisher())
+        engine?.breakpoints = breakpoints.handler
         self.systemProxy = systemProxy
         self.configuration = configuration
         self.saveConfiguration = saveConfiguration
@@ -186,6 +197,46 @@ public final class CaptureViewModel {
     public var runningConfiguration: EngineConfiguration? { engine?.runningConfiguration }
     /// The root CA used for HTTPS decryption; nil without an engine.
     public var authority: CertificateAuthority? { engine?.authority }
+
+    // MARK: Pro
+
+    /// Unlocks or locks the Pro tools for this entitlement.
+    public func apply(_ entitlement: Entitlement) {
+        breakpoints.isAllowed = entitlement.allows(.breakpoints)
+        composer.isAllowed = entitlement.allows(.mqttPublish)
+    }
+
+    /// Fills the composer with a captured PUBLISH, ready to send again. False when `row` isn't one.
+    @discardableResult
+    public func prepareReplay(of row: TrafficRow) -> Bool {
+        guard case .mqtt(let capture) = row.event, case .publish = capture.event.packet else { return false }
+        composer.prepareReplay(of: capture, forwarders: configuration.forwarders)
+        return true
+    }
+
+    /// Fills the composer for a new message to `topic`, on the broker that topic was last seen on.
+    public func preparePublish(toTopic topic: String) {
+        let last = rows.last { row in
+            guard case .mqtt(let capture) = row.event, case .publish = capture.event.packet else { return false }
+            return capture.event.resolvedTopic == topic
+        }
+        var broker: String?
+        var version: MQTTVersion?
+        if case .mqtt(let capture)? = last?.event {
+            broker = capture.broker
+            version = capture.event.version
+        } else if let forwarder = configuration.forwarders.first {
+            broker = "\(forwarder.brokerHost):\(forwarder.brokerPort)"
+        }
+        composer.preparePublish(toTopic: topic, broker: broker, version: version, forwarders: configuration.forwarders)
+    }
+
+    /// Adds a breakpoint for the URL of an HTTP row (its method only).
+    @discardableResult
+    public func addBreakpoint(for row: TrafficRow) -> BreakpointRule? {
+        guard case .httpExchange(let exchange) = row.event else { return nil }
+        return breakpoints.addRule(for: exchange.url, method: exchange.method)
+    }
 
     // MARK: Capture
 

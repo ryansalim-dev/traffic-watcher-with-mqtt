@@ -3,6 +3,7 @@ import AppCore
 import AppKit
 import CaptureStore
 import Licensing
+import ProxyCore
 import SwiftUI
 
 /// `TrafficWatcher --screenshots <dir>` fills a throwaway store with sample traffic, opens the
@@ -98,7 +99,93 @@ enum Screenshots {
                         size: settingsSize, dark: false, name: "12-settings-license-free", into: directory)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .license),
                         size: settingsSize, dark: true, name: "13-settings-license-pro-dark", into: directory)
+
+        try await shootProTools(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper, into: directory)
         await model.stopCapture()
+    }
+
+    /// Breakpoints and MQTT publish/replay, with a Pro license (and one locked, free-tier view).
+    private static func shootProTools(model: CaptureViewModel, storage: CertificateStorage, freeLicense: LicenseManager,
+                                      proLicense: LicenseManager, helper: SystemProxyHelper, into directory: URL) async throws {
+        let size = NSSize(width: 1440, height: 860)
+        model.apply(proLicense.entitlement)
+        let center = model.breakpoints
+        center.rules = [
+            BreakpointRule(pattern: "api.example.com/v2/devices*", method: "GET"),
+            BreakpointRule(pattern: "https://api.example.com/v2/login", method: "POST", stages: .response),
+            BreakpointRule(isEnabled: false, pattern: "*.example.net/*", stages: .request),
+        ]
+
+        // A finished exchange that went through a breakpoint, so the inspector shows the note.
+        let edited = HTTPExchange(
+            startedAt: Date(), duration: 4.2, method: "PATCH", url: "https://api.example.com/v2/devices/42",
+            requestHeaders: [CapturedHeader(name: "Content-Type", value: "application/json")],
+            requestBody: Array(#"{"name":"Kitchen lamp","on":false}"#.utf8), statusCode: 200,
+            responseHeaders: [CapturedHeader(name: "Content-Type", value: "application/json")],
+            responseBody: Array(#"{"id":42,"name":"Kitchen lamp","on":false,"firmware":"2.4.1"}"#.utf8),
+            breakpoint: [.request, .response])
+        model.ingest(.httpExchange(edited))
+        model.section = .http
+        model.selection = model.rows.last?.id
+
+        // Two requests waiting at breakpoints.
+        let request = HTTPRequestDraft(
+            method: "GET", url: "https://api.example.com/v2/devices?room=kitchen&page=1",
+            headers: [CapturedHeader(name: "Host", value: "api.example.com"),
+                      CapturedHeader(name: "Accept", value: "application/json"),
+                      CapturedHeader(name: "Authorization", value: "Bearer eyJhbGciOiJIUzI1NiJ9.demo"),
+                      CapturedHeader(name: "User-Agent", value: "HomeHub/3.2 (iPhone; iOS 18.1)")],
+            body: [])
+        let login = HTTPRequestDraft(method: "POST", url: "https://api.example.com/v2/login",
+                                     headers: [CapturedHeader(name: "Content-Type", value: "application/json")],
+                                     body: Array(#"{"email":"ryan@example.com","password":"••••••"}"#.utf8))
+        let response = HTTPResponseDraft(
+            statusCode: 200,
+            headers: [CapturedHeader(name: "Content-Type", value: "application/json; charset=utf-8"),
+                      CapturedHeader(name: "Cache-Control", value: "no-store"),
+                      CapturedHeader(name: "Set-Cookie", value: "session=4f1c…; HttpOnly; Secure")],
+            body: Array("""
+            {
+              "token": "eyJhbGciOiJIUzI1NiJ9.demo",
+              "expiresIn": 3600,
+              "user": { "id": 7, "name": "Ryan", "plan": "pro" }
+            }
+            """.utf8))
+        let handler = center.handler
+        let first = Task { await handler.editRequest(request) }
+        let second = Task { await handler.editResponse(response, for: login) }
+        while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
+
+        try await shoot(BreakpointEditor(center: center, item: center.paused[0]), size: NSSize(width: 780, height: 640),
+                        dark: false, name: "14-breakpoint-request", into: directory)
+        try await shoot(BreakpointEditor(center: center, item: center.paused[1]), size: NSSize(width: 780, height: 640),
+                        dark: true, name: "15-breakpoint-response-dark", into: directory)
+        try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
+                        size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
+        center.resumeAll()
+        _ = await (first.value, second.value)
+
+        // Main window with Pro tools in the toolbar and an exchange edited at a breakpoint.
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: size, dark: false,
+                        name: "17-timeline-breakpoint-edited", into: directory)
+
+        // Replay of a captured PUBLISH, ready to send.
+        model.section = .mqtt
+        if let publish = model.rows.last(where: { $0.kind == .mqtt && $0.summary.contains("home/kitchen/temperature") }) {
+            model.selection = publish.id
+            model.prepareReplay(of: publish)
+        }
+        model.composer.repeatCount = 5
+        model.composer.intervalMilliseconds = 500
+        let composerSize = NSSize(width: 600, height: 760)
+        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
+        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
+
+        model.apply(freeLicense.entitlement)
+        model.preparePublish(toTopic: "home/kitchen/light/set")
+        model.composer.payloadText = #"{"on": true, "brightness": 80}"#
+        model.composer.repeatCount = 1
+        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "20-mqtt-publish-free", into: directory)
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL) async throws {
