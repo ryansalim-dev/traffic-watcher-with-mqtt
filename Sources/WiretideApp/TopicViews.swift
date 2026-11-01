@@ -217,8 +217,8 @@ struct TopicStats: View {
         let perMinute = node.history.filter { $0.date > Date().addingTimeInterval(-60) }.count
         HStack(spacing: 1) {
             stat("Messages", node.messageCount.formatted())
-            stat("Last min", perMinute.formatted())
-            stat("Incl. subtopics", node.totalCount.formatted())
+            stat("Per min", perMinute.formatted())
+            stat("Subtree", node.totalCount.formatted())
             stat("Retained", node.retained ? "Yes" : "No")
         }
         .background(Theme.hairline)
@@ -228,7 +228,7 @@ struct TopicStats: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            CapsLabel(label)
+            CapsLabel(label).lineLimit(1).minimumScaleFactor(0.8)
             Text(value).font(.system(size: 16, weight: .semibold)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -257,18 +257,20 @@ struct FieldChart: View {
                 } else {
                     Text(selected.field).font(.system(size: 12, weight: .medium, design: .monospaced))
                 }
-                Text("last \(selected.points.count) messages").font(.system(size: 11.5)).foregroundStyle(.tertiary)
                 Spacer()
                 if let latest = selected.latest, let low = selected.minimum, let high = selected.maximum {
-                    Text(Self.format(latest)).font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                    Text("min \(Self.format(low)) · max \(Self.format(high))")
+                    Text(Self.format(latest)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                    Text("\(Self.format(low))–\(Self.format(high))")
                         .font(.system(size: 11.5))
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
+                        .help("Lowest and highest of the last \(selected.points.count) messages")
                 }
             }
+            .lineLimit(1)
+            let (lowY, highY) = Self.domain(selected)
             Chart(Array(selected.points.enumerated()), id: \.offset) { _, point in
-                AreaMark(x: .value("Time", point.date), y: .value(selected.field, point.value))
+                AreaMark(x: .value("Time", point.date), yStart: .value("Floor", lowY), yEnd: .value(selected.field, point.value))
                     .foregroundStyle(LinearGradient(colors: [Theme.mqtt.opacity(0.22), Theme.mqtt.opacity(0.02)],
                                                     startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.monotone)
@@ -277,7 +279,7 @@ struct FieldChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.8, lineJoin: .round))
                     .interpolationMethod(.monotone)
             }
-            .chartYScale(domain: .automatic(includesZero: false))
+            .chartYScale(domain: lowY...highY)
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 3)) { _ in
                     AxisValueLabel(format: .dateTime.hour().minute().second())
@@ -292,6 +294,13 @@ struct FieldChart: View {
             .frame(height: 110)
         }
         .padding(16)
+    }
+
+    /// The y range: the data's range with a little headroom, never zero height.
+    static func domain(_ series: NumericSeries) -> (Double, Double) {
+        let low = series.minimum ?? 0, high = series.maximum ?? 1
+        let pad = max((high - low) * 0.15, abs(high) * 0.01, 0.01)
+        return (low - pad, high + pad)
     }
 
     static func format(_ value: Double) -> String {

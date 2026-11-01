@@ -92,7 +92,9 @@ struct BreakpointEditor: View {
                     HStack {
                         CapsLabel("Body")
                         Spacer()
-                        Text(Formatting.byteCount(currentBody.count)).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Text(currentBody.isEmpty ? "Empty" : Formatting.byteCount(currentBody.count))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)

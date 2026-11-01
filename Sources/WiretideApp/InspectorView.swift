@@ -287,13 +287,11 @@ struct MQTTInspector: View {
     var body: some View {
         let event = capture.event
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
                     TypePill(text: "\(event.packet.type)".uppercased(), color: Theme.mqtt, fixedWidth: nil)
-                    Text(event.direction == .clientToBroker ? "client → broker" : "broker → client")
-                        .foregroundStyle(.secondary)
+                    Text("MQTT \(event.version)").font(.system(size: 12)).foregroundStyle(.secondary)
                     Spacer()
-                    Text("MQTT \(event.version)").font(.caption).foregroundStyle(.secondary)
                     if case .publish = event.packet, let onReplay {
                         Button {
                             onReplay()
@@ -301,10 +299,14 @@ struct MQTTInspector: View {
                             Label("Replay…", systemImage: "arrow.clockwise")
                         }
                         .controlSize(.small)
+                        .fixedSize()
                         .help("Send this message again, edited if you like (Pro)")
                     }
                 }
-                Text(capture.broker).font(.callout).foregroundStyle(.secondary)
+                Text("\(capture.broker) · \(event.direction == .clientToBroker ? "client → broker" : "broker → client")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .padding(16)
             Divider()

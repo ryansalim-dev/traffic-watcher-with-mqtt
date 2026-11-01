@@ -117,7 +117,7 @@ public struct NumericSeries: Equatable, Sendable, Identifiable {
         }
         return order.compactMap { field in
             guard let values = points[field], values.count >= 2 else { return nil }
-            return NumericSeries(field: field, points: values)
+            return NumericSeries(field: field, points: values.sorted { $0.date < $1.date })
         }
     }
 
