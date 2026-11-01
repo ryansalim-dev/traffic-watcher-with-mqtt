@@ -216,7 +216,7 @@ struct TopicStats: View {
     var body: some View {
         let perMinute = node.history.filter { $0.date > Date().addingTimeInterval(-60) }.count
         HStack(spacing: 1) {
-            stat("Messages", node.messageCount.formatted())
+            stat("Count", node.messageCount.formatted())
             stat("Per min", perMinute.formatted())
             stat("Subtree", node.totalCount.formatted())
             stat("Retained", node.retained ? "Yes" : "No")
