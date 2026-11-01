@@ -2,6 +2,11 @@
 public struct MQTTFrame: Equatable, Sendable {
     public var packet: MQTTPacket
     public var rawBytes: [UInt8]
+
+    public init(packet: MQTTPacket, rawBytes: [UInt8]) {
+        self.packet = packet
+        self.rawBytes = rawBytes
+    }
 }
 
 /// Splits an arbitrary chunked byte stream (one direction of a TCP or WebSocket connection)

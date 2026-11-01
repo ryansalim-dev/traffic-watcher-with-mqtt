@@ -2,13 +2,13 @@ import Foundation
 import MQTTCore
 
 /// A header as seen on the wire, order and case preserved.
-public struct CapturedHeader: Equatable, Sendable {
+public struct CapturedHeader: Equatable, Sendable, Codable {
     public var name: String
     public var value: String
 }
 
 /// One plain-HTTP request and its response (or the error that replaced it).
-public struct HTTPExchange: Equatable, Sendable, Identifiable {
+public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     public var id: UUID
     public var startedAt: Date
     public var duration: TimeInterval
@@ -23,7 +23,7 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable {
 }
 
 /// A CONNECT tunnel the proxy relayed without decrypting.
-public struct TunnelInfo: Equatable, Sendable, Identifiable {
+public struct TunnelInfo: Equatable, Sendable, Identifiable, Codable {
     public var id: UUID
     public var openedAt: Date
     public var host: String
@@ -36,15 +36,22 @@ public struct MQTTCaptureEvent: Equatable, Sendable {
     public var timestamp: Date
     public var broker: String
     public var event: MQTTSessionEvent
+
+    public init(connectionID: UUID, timestamp: Date, broker: String, event: MQTTSessionEvent) {
+        self.connectionID = connectionID
+        self.timestamp = timestamp
+        self.broker = broker
+        self.event = event
+    }
 }
 
-public enum WebSocketDirection: Equatable, Sendable {
+public enum WebSocketDirection: String, Equatable, Sendable, Codable {
     case clientToServer
     case serverToClient
 }
 
 /// One complete WebSocket message (fragments joined, payload unmasked) on a non-MQTT socket.
-public struct WebSocketMessage: Equatable, Sendable {
+public struct WebSocketMessage: Equatable, Sendable, Codable {
     public var connectionID: UUID
     public var timestamp: Date
     public var url: String
