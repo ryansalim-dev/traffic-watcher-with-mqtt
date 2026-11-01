@@ -5,6 +5,11 @@ import MQTTCore
 public struct CapturedHeader: Equatable, Sendable, Codable {
     public var name: String
     public var value: String
+
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
 }
 
 /// One plain-HTTP request and its response (or the error that replaced it).
@@ -20,6 +25,22 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     public var responseHeaders: [CapturedHeader]
     public var responseBody: [UInt8]
     public var error: String?
+
+    public init(id: UUID = UUID(), startedAt: Date, duration: TimeInterval, method: String, url: String,
+                requestHeaders: [CapturedHeader], requestBody: [UInt8], statusCode: Int?,
+                responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil) {
+        self.id = id
+        self.startedAt = startedAt
+        self.duration = duration
+        self.method = method
+        self.url = url
+        self.requestHeaders = requestHeaders
+        self.requestBody = requestBody
+        self.statusCode = statusCode
+        self.responseHeaders = responseHeaders
+        self.responseBody = responseBody
+        self.error = error
+    }
 }
 
 /// A CONNECT tunnel the proxy relayed without decrypting.
@@ -28,6 +49,13 @@ public struct TunnelInfo: Equatable, Sendable, Identifiable, Codable {
     public var openedAt: Date
     public var host: String
     public var port: Int
+
+    public init(id: UUID = UUID(), openedAt: Date, host: String, port: Int) {
+        self.id = id
+        self.openedAt = openedAt
+        self.host = host
+        self.port = port
+    }
 }
 
 /// One MQTT packet seen on a forwarded connection.
@@ -58,6 +86,16 @@ public struct WebSocketMessage: Equatable, Sendable, Codable {
     public var direction: WebSocketDirection
     public var opcode: WebSocketOpcode
     public var payload: [UInt8]
+
+    public init(connectionID: UUID, timestamp: Date, url: String, direction: WebSocketDirection,
+                opcode: WebSocketOpcode, payload: [UInt8]) {
+        self.connectionID = connectionID
+        self.timestamp = timestamp
+        self.url = url
+        self.direction = direction
+        self.opcode = opcode
+        self.payload = payload
+    }
 }
 
 public enum CaptureEvent: Equatable, Sendable {
