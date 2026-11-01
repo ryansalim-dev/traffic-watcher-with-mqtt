@@ -34,15 +34,20 @@ APP="$OUTPUT/TrafficWatcher.app"
 ZIP="$OUTPUT/TrafficWatcher-$VERSION.zip"
 
 echo "==> Building Traffic Watcher $VERSION ($BUILD_NUMBER) for $ARCHS"
-ARCH_FLAGS=()
-for arch in $ARCHS; do ARCH_FLAGS+=(--arch "$arch"); done
-swift build -c release --product TrafficWatcher "${ARCH_FLAGS[@]}"
-BIN=$(swift build -c release "${ARCH_FLAGS[@]}" --show-bin-path)
+# One native build per architecture, joined with lipo. (`swift build --arch a --arch b` switches to
+# the Xcode build system, which fails on this package.)
+BINARIES=()
+for arch in $ARCHS; do
+  triple="$arch-apple-macosx14.0"
+  swift build -c release --product TrafficWatcher --triple "$triple"
+  BIN=$(swift build -c release --triple "$triple" --show-bin-path)
+  BINARIES+=("$BIN/TrafficWatcher")
+done
 
 echo "==> Assembling $APP"
 rm -rf "$APP" "$ZIP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
-cp "$BIN/TrafficWatcher" "$APP/Contents/MacOS/TrafficWatcher"
+lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/TrafficWatcher"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 # SwiftPM resource bundles, if any target gains resources later.
 find "$BIN" -maxdepth 1 -name '*.bundle' -exec ditto {} "$APP/Contents/Resources/" \; 2>/dev/null || true
