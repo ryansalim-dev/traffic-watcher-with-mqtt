@@ -97,7 +97,7 @@ final class HelperConnection: SystemProxyControlling, @unchecked Sendable {
         lock.withLock {
             if let connection { return connection }
             let connection = NSXPCConnection(machServiceName: HelperIdentity.machServiceName, options: .privileged)
-            connection.remoteObjectInterface = NSXPCInterface(with: TrafficWatcherHelperProtocol.self)
+            connection.remoteObjectInterface = NSXPCInterface(with: WiretideHelperProtocol.self)
             connection.invalidationHandler = { [weak self] in
                 self?.lock.withLock { self?.connection = nil }
             }
@@ -107,7 +107,7 @@ final class HelperConnection: SystemProxyControlling, @unchecked Sendable {
         }
     }
 
-    private func call(_ body: @escaping (TrafficWatcherHelperProtocol, @escaping (String?) -> Void) -> Void) async throws {
+    private func call(_ body: @escaping (WiretideHelperProtocol, @escaping (String?) -> Void) -> Void) async throws {
         let connection = currentConnection()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let once = Once()
@@ -117,7 +117,7 @@ final class HelperConnection: SystemProxyControlling, @unchecked Sendable {
                         "The helper isn't available. Install it in Settings › Proxy. (\(error.localizedDescription))"))
                 }
             }
-            guard let helper = proxy as? TrafficWatcherHelperProtocol else {
+            guard let helper = proxy as? WiretideHelperProtocol else {
                 return once.run { continuation.resume(throwing: HelperError(message: "The helper has an unexpected interface.")) }
             }
             body(helper) { message in

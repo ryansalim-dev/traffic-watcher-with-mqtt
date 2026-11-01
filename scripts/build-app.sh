@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds TrafficWatcher.app from the Swift package, signs it, and zips it for Sparkle.
+# Builds Wiretide.app from the Swift package, signs it, and zips it for Sparkle.
 #
 # Everything is configured through environment variables, so the same script serves local
 # builds (ad-hoc signed) and CI releases (Developer ID, notarized):
 #
 #   VERSION            marketing version, e.g. 1.0.0        (default: latest v* tag, or 0.0.0)
 #   BUILD_NUMBER       CFBundleVersion, must always increase  (default: git commit count)
-#   BUNDLE_ID          bundle identifier; must match HelperIdentity.appBundleIdentifier (default: com.ryansalim.TrafficWatcher)
+#   BUNDLE_ID          bundle identifier; must match HelperIdentity.appBundleIdentifier (default: app.wiretide.Wiretide)
 #   ARCHS              architectures                          (default: "arm64 x86_64")
 #   RELEASE_DATE       yyyy-MM-dd, starts the license update window check (default: today, UTC)
 #   SIGN_IDENTITY      codesign identity; "-" signs ad hoc    (default: -)
@@ -24,35 +24,35 @@ ROOT=$(pwd)
 VERSION=${VERSION:-$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null | sed 's/^v//' || true)}
 VERSION=${VERSION:-0.0.0}
 BUILD_NUMBER=${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}
-BUNDLE_ID=${BUNDLE_ID:-com.ryansalim.TrafficWatcher}
+BUNDLE_ID=${BUNDLE_ID:-app.wiretide.Wiretide}
 ARCHS=${ARCHS:-arm64 x86_64}
 RELEASE_DATE=${RELEASE_DATE:-$(date -u +%Y-%m-%d)}
 SIGN_IDENTITY=${SIGN_IDENTITY:--}
 OUTPUT=${OUTPUT:-dist}
 
-APP="$OUTPUT/TrafficWatcher.app"
-ZIP="$OUTPUT/TrafficWatcher-$VERSION.zip"
+APP="$OUTPUT/Wiretide.app"
+ZIP="$OUTPUT/Wiretide-$VERSION.zip"
 
-echo "==> Building Traffic Watcher $VERSION ($BUILD_NUMBER) for $ARCHS"
+echo "==> Building Wiretide $VERSION ($BUILD_NUMBER) for $ARCHS"
 # One native build per architecture, joined with lipo. (`swift build --arch a --arch b` switches to
 # the Xcode build system, which fails on this package.)
 BINARIES=()
 HELPERS=()
 for arch in $ARCHS; do
   triple="$arch-apple-macosx14.0"
-  swift build -c release --product TrafficWatcher --triple "$triple"
-  swift build -c release --product TrafficWatcherHelper --triple "$triple"
+  swift build -c release --product Wiretide --triple "$triple"
+  swift build -c release --product WiretideHelper --triple "$triple"
   BIN=$(swift build -c release --triple "$triple" --show-bin-path)
-  BINARIES+=("$BIN/TrafficWatcher")
-  HELPERS+=("$BIN/TrafficWatcherHelper")
+  BINARIES+=("$BIN/Wiretide")
+  HELPERS+=("$BIN/WiretideHelper")
 done
 
 echo "==> Assembling $APP"
 rm -rf "$APP" "$ZIP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchDaemons"
-lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/TrafficWatcher"
-lipo -create "${HELPERS[@]}" -output "$APP/Contents/MacOS/TrafficWatcherHelper"
-cp Packaging/com.ryansalim.TrafficWatcher.Helper.plist "$APP/Contents/Library/LaunchDaemons/"
+lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/Wiretide"
+lipo -create "${HELPERS[@]}" -output "$APP/Contents/MacOS/WiretideHelper"
+cp Packaging/app.wiretide.Wiretide.Helper.plist "$APP/Contents/Library/LaunchDaemons/"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 # SwiftPM resource bundles, if any target gains resources later.
 find "$BIN" -maxdepth 1 -name '*.bundle' -exec ditto {} "$APP/Contents/Resources/" \; 2>/dev/null || true
@@ -88,7 +88,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$SPARKLE/Autoupdate"
 "${SIGN[@]}" "$SPARKLE/Updater.app"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
-"${SIGN[@]}" --identifier com.ryansalim.TrafficWatcher.Helper "$APP/Contents/MacOS/TrafficWatcherHelper"
+"${SIGN[@]}" --identifier app.wiretide.Wiretide.Helper "$APP/Contents/MacOS/WiretideHelper"
 "${SIGN[@]}" "$APP"
 codesign --verify --deep --strict --verbose=1 "$APP"
 

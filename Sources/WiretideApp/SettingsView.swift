@@ -80,7 +80,7 @@ struct ProxySettings: View {
             } header: {
                 Text("System proxy")
             } footer: {
-                Text("Mac apps and the Simulator then go through Traffic Watcher without any setup. A small helper changes the network settings and puts your previous proxy settings back when capture stops, the app quits or the Mac restarts.")
+                Text("Mac apps and the Simulator then go through Wiretide without any setup. A small helper changes the network settings and puts your previous proxy settings back when capture stops, the app quits or the Mac restarts.")
                     .foregroundStyle(.secondary)
             }
 
@@ -111,7 +111,7 @@ struct ProxySettings: View {
         case .installed:
             Label("Helper installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         case .needsApproval:
-            Label("Allow “Traffic Watcher” in Login Items to finish", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
+            Label("Allow “Wiretide” in Login Items to finish", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
         case .notInstalled:
             Label("Helper not installed", systemImage: "circle.dashed").foregroundStyle(.secondary)
         case .failed(let message):
@@ -177,7 +177,7 @@ struct MQTTSettings: View {
             } header: {
                 Text("Brokers")
             } footer: {
-                Text("Point your app at localhost and the local port instead of the broker. Traffic Watcher relays every packet to the broker and logs it, over plain TCP or TLS. MQTT over WebSockets is captured through the HTTP proxy automatically.")
+                Text("Point your app at localhost and the local port instead of the broker. Wiretide relays every packet to the broker and logs it, over plain TCP or TLS. MQTT over WebSockets is captured through the HTTP proxy automatically.")
                     .foregroundStyle(.secondary)
             }
             RestartHint(model: model)
@@ -207,7 +207,7 @@ struct CertificateSettings: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Root certificate", value: "Traffic Watcher CA")
+                LabeledContent("Root certificate", value: "Wiretide CA")
                 LabeledContent("Stored in") {
                     Text(certificates.directory.path(percentEncoded: false))
                         .textSelection(.enabled)

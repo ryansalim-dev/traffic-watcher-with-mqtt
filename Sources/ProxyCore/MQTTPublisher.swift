@@ -35,7 +35,7 @@ public struct MQTTBrokerTarget: Codable, Equatable, Hashable, Sendable {
 
     /// The identifier sent in CONNECT. Brokers on 3.1.1 may refuse an empty one, so one is made up.
     var effectiveClientIdentifier: String {
-        clientIdentifier.isEmpty ? "trafficwatcher-" + UUID().uuidString.prefix(8).lowercased() : clientIdentifier
+        clientIdentifier.isEmpty ? "wiretide-" + UUID().uuidString.prefix(8).lowercased() : clientIdentifier
     }
 }
 

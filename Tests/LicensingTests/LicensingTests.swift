@@ -78,7 +78,7 @@ private func body(_ flag: String, status: String = "active", storeID: Int = 7, p
      "license_key": {"id": 1, "status": "\(status)", "key": "ABCD", "activation_limit": 2, "activation_usage": 1,
                      "created_at": "2026-09-21T14:13:20.000000Z", "expires_at": null},
      "instance": {"id": "inst-9", "name": "Ryan's MacBook", "created_at": "2026-11-01T00:00:00.000000Z"},
-     "meta": {"store_id": \(storeID), "order_id": 2, "order_item_id": 3, "product_id": \(productID), "product_name": "Traffic Watcher Pro",
+     "meta": {"store_id": \(storeID), "order_id": 2, "order_item_id": 3, "product_id": \(productID), "product_name": "Wiretide Pro",
               "variant_id": 5, "variant_name": "Default", "customer_id": 6, "customer_name": "Ryan", "customer_email": "ryan@example.com"}}
     """
 }

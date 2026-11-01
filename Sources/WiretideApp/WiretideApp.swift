@@ -15,30 +15,30 @@ enum Launcher {
         if let index = arguments.firstIndex(of: "--screenshots"), index + 1 < arguments.count {
             Screenshots.run(into: URL(fileURLWithPath: arguments[index + 1], isDirectory: true))
         } else {
-            TrafficWatcherApp.main()
+            WiretideApp.main()
         }
     }
 }
 
-struct TrafficWatcherApp: App {
+struct WiretideApp: App {
     @State private var setup = AppSetup.load()
     @StateObject private var updates = Updates()
 
     init() {
-        // Lets `swift run TrafficWatcher` show a normal app with a Dock icon and menu bar.
+        // Lets `swift run Wiretide` show a normal app with a Dock icon and menu bar.
         // (A packaged .app gets this from its Info.plist; setting it again is harmless.)
         NSApplication.shared.setActivationPolicy(.regular)
         DispatchQueue.main.async { NSApplication.shared.activate(ignoringOtherApps: true) }
     }
 
     var body: some Scene {
-        WindowGroup("Traffic Watcher") {
+        WindowGroup("Wiretide") {
             switch setup {
             case .ready(let model, let storage, let license, _):
                 ContentView(model: model, certificates: storage, license: license)
                     .frame(minWidth: 1000, minHeight: 600)
             case .failed(let message):
-                ContentUnavailableView("Traffic Watcher could not start", systemImage: "xmark.octagon", description: Text(message))
+                ContentUnavailableView("Wiretide could not start", systemImage: "xmark.octagon", description: Text(message))
                     .frame(minWidth: 500, minHeight: 300)
             }
         }
@@ -72,7 +72,7 @@ enum AppSetup {
     static func load() -> AppSetup {
         do {
             let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                .appendingPathComponent("TrafficWatcher", isDirectory: true)
+                .appendingPathComponent("Wiretide", isDirectory: true)
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
 
             let storage = CertificateStorage(directory: support)
