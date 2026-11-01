@@ -8,12 +8,18 @@ struct BreakpointsToggle: View {
     @Bindable var center: BreakpointCenter
 
     var body: some View {
-        Toggle(isOn: $center.isEnabled) {
-            Label("Breakpoints", systemImage: center.isAllowed ? "pause.octagon" : "lock")
+        Button {
+            center.isEnabled.toggle()
+        } label: {
+            Label("Breakpoints", systemImage: symbol)
         }
-        .toggleStyle(.button)
-        .tint(center.isActive ? .orange : nil)
+        .foregroundStyle(center.isActive ? Color.orange : Color.secondary)
         .help(help)
+    }
+
+    private var symbol: String {
+        if !center.isAllowed { return "pause.octagon" }
+        return center.isEnabled ? "pause.octagon.fill" : "pause.octagon"
     }
 
     private var help: String {
@@ -60,7 +66,7 @@ struct BreakpointEditor: View {
                             .frame(width: 70)
                             .textFieldStyle(.roundedBorder)
                             .font(.body.monospaced())
-                        Text(HTTPURLResponse.localizedString(forStatusCode: status).capitalized)
+                        Text(Self.reasonPhrase(status))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -148,6 +154,17 @@ struct BreakpointEditor: View {
     }
 
     private var currentBody: [UInt8] { binaryBody ?? Array(bodyText.utf8) }
+
+    static func reasonPhrase(_ code: Int) -> String {
+        let common: [Int: String] = [
+            200: "OK", 201: "Created", 202: "Accepted", 204: "No Content", 301: "Moved Permanently", 302: "Found",
+            304: "Not Modified", 307: "Temporary Redirect", 308: "Permanent Redirect", 400: "Bad Request",
+            401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict", 422: "Unprocessable Content",
+            429: "Too Many Requests", 500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Unavailable",
+            504: "Gateway Timeout",
+        ]
+        return common[code] ?? HTTPURLResponse.localizedString(forStatusCode: code).capitalized
+    }
 
     private func load() {
         let headers = isRequest ? item.request.headers : item.response?.headers ?? []

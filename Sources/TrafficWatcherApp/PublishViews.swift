@@ -84,6 +84,7 @@ struct MQTTComposerView: View {
                         HStack {
                             Text("Send")
                             TextField("Times", value: $composer.repeatCount, format: .number)
+                                .labelsHidden()
                                 .frame(width: 70)
                                 .multilineTextAlignment(.trailing)
                             Text(composer.repeatCount == 1 ? "time" : "times")
@@ -94,6 +95,7 @@ struct MQTTComposerView: View {
                             Text("Wait between messages")
                             Spacer()
                             TextField("Interval", value: $composer.intervalMilliseconds, format: .number)
+                                .labelsHidden()
                                 .frame(width: 80)
                                 .multilineTextAlignment(.trailing)
                             Text("ms")
