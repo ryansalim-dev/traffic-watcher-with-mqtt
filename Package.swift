@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "Licensing", targets: ["Licensing"]),
         .library(name: "AppCore", targets: ["AppCore"]),
         .executable(name: "TrafficWatcher", targets: ["TrafficWatcherApp"]),
+        .executable(name: "TrafficWatcherHelper", targets: ["TrafficWatcherHelper"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.0"),
@@ -28,6 +29,10 @@ let package = Package(
         .target(name: "CaptureStore", dependencies: ["CSQLite", "MQTTCore", "ProxyCore"]),
         // Pro license: Lemon Squeezy client, entitlement rules, keychain storage. Foundation only.
         .target(name: "Licensing"),
+        // Shared by the app and the privileged helper: XPC interface and system-proxy rules.
+        .target(name: "HelperCore"),
+        // Root daemon (SMAppService) that switches the system proxy on while capturing and always back off.
+        .executableTarget(name: "TrafficWatcherHelper", dependencies: ["HelperCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(
             name: "AppCore",
             dependencies: [
@@ -45,7 +50,7 @@ let package = Package(
         .executableTarget(
             name: "TrafficWatcherApp",
             dependencies: [
-                "AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing",
+                "AppCore", "CaptureStore", "ProxyCore", "MQTTCore", "TLSMitm", "Licensing", "HelperCore",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)],
@@ -78,6 +83,7 @@ let package = Package(
         ),
         .testTarget(name: "MQTTCoreTests", dependencies: ["MQTTCore"]),
         .testTarget(name: "LicensingTests", dependencies: ["Licensing"]),
+        .testTarget(name: "HelperCoreTests", dependencies: ["HelperCore"]),
         .testTarget(name: "CaptureStoreTests", dependencies: ["CaptureStore", "ProxyCore", "MQTTCore"]),
         .testTarget(
             name: "AppCoreTests",

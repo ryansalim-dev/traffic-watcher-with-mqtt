@@ -8,13 +8,14 @@ struct SettingsView: View {
     @Bindable var model: CaptureViewModel
     let certificates: CertificateStorage
     let license: LicenseManager
+    let helper: SystemProxyHelper
     @State var tab: Tab = .proxy
 
     enum Tab: Hashable { case proxy, mqtt, certificate, license }
 
     var body: some View {
         TabView(selection: $tab) {
-            ProxySettings(model: model)
+            ProxySettings(model: model, helper: helper)
                 .tabItem { Label("Proxy", systemImage: "network") }
                 .tag(Tab.proxy)
             MQTTSettings(model: model)
@@ -45,6 +46,7 @@ private struct RestartHint: View {
 
 struct ProxySettings: View {
     @Bindable var model: CaptureViewModel
+    let helper: SystemProxyHelper
     @State private var newBypassHost = ""
     @State private var selectedBypass: String?
 
@@ -56,6 +58,26 @@ struct ProxySettings: View {
                 Toggle("Decrypt HTTPS", isOn: $model.configuration.decryptHTTPS)
             } footer: {
                 Text("Set the HTTP proxy of your Mac, Simulator or iPhone to this Mac's address and port. Other devices need the first toggle on.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Use as this Mac's proxy while capturing", isOn: $model.configuration.setSystemProxy)
+                    .disabled(helper.state != .installed)
+                HStack {
+                    helperStatus
+                    Spacer()
+                    switch helper.state {
+                    case .notInstalled, .failed: Button("Install Helper…") { helper.install() }
+                    case .needsApproval: Button("Open Login Items…") { helper.openLoginItems() }
+                    case .installed: Button("Uninstall") { helper.uninstall() }
+                    case .unavailable: EmptyView()
+                    }
+                }
+            } header: {
+                Text("System proxy")
+            } footer: {
+                Text("Mac apps and the Simulator then go through Traffic Watcher without any setup. A small helper changes the network settings and puts your previous proxy settings back when capture stops, the app quits or the Mac restarts.")
                     .foregroundStyle(.secondary)
             }
 
@@ -78,6 +100,22 @@ struct ProxySettings: View {
             RestartHint(model: model)
         }
         .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in helper.refresh() }
+    }
+
+    @ViewBuilder private var helperStatus: some View {
+        switch helper.state {
+        case .installed:
+            Label("Helper installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .needsApproval:
+            Label("Allow “Traffic Watcher” in Login Items to finish", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
+        case .notInstalled:
+            Label("Helper not installed", systemImage: "circle.dashed").foregroundStyle(.secondary)
+        case .failed(let message):
+            Label(message, systemImage: "xmark.octagon").foregroundStyle(.red)
+        case .unavailable:
+            Label("Available in the downloaded app", systemImage: "info.circle").foregroundStyle(.secondary)
+        }
     }
 
     private func addBypass() {
