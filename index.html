@@ -174,7 +174,7 @@
           </figure>
           <figure class="window window-offset">
             <picture>
-              <source srcset="images/mqtt-packets-light.webp" media="(prefers-color-scheme: light)">
+              <source srcset="images/mqtt-connect-light.webp" media="(prefers-color-scheme: light)">
               <img src="images/mqtt-connect-dark.webp" width="1440" height="860" loading="lazy"
                    alt="The MQTT packet list with a packet open in the inspector.">
             </picture>
@@ -266,8 +266,11 @@
                 </picture>
               </figure>
               <figure class="window window-offset">
-                <img src="images/rewrite-mqtt-dark.webp" width="980" height="660" loading="lazy"
-                     alt="An MQTT rule that changes the payload and topic of matching messages.">
+                <picture>
+                  <source srcset="images/rewrite-mqtt-light.webp" media="(prefers-color-scheme: light)">
+                  <img src="images/rewrite-mqtt-dark.webp" width="980" height="660" loading="lazy"
+                       alt="An MQTT rule that changes the payload and topic of matching messages.">
+                </picture>
               </figure>
             </div>
           </article>
@@ -326,15 +329,24 @@
         <p class="sub">Built in Swift, so it starts fast and stays light. Dark and light mode, Apple silicon and Intel, and no Electron.</p>
         <div class="gallery" role="list">
           <figure class="shot" role="listitem">
-            <img src="images/filters-dark.webp" width="1440" height="860" loading="lazy" alt="The timeline filtered to errors in dark mode.">
+            <picture>
+              <source srcset="images/filters-light.webp" media="(prefers-color-scheme: light)">
+              <img src="images/filters-dark.webp" width="1440" height="860" loading="lazy" alt="The timeline filtered to errors.">
+            </picture>
             <figcaption>Filter chips and search for headers, bodies, topics and payloads.</figcaption>
           </figure>
           <figure class="shot" role="listitem">
-            <img src="images/websocket-light.webp" width="1440" height="860" loading="lazy" alt="WebSocket text frames in both directions with the payload open in the inspector.">
+            <picture>
+              <source srcset="images/websocket-light.webp" media="(prefers-color-scheme: light)">
+              <img src="images/websocket-dark.webp" width="1440" height="860" loading="lazy" alt="WebSocket text frames in both directions with the payload open in the inspector.">
+            </picture>
             <figcaption>WebSocket frames in both directions, decoded.</figcaption>
           </figure>
           <figure class="shot" role="listitem">
-            <img src="images/issues-light.webp" width="1440" height="860" loading="lazy" alt="The Issues list showing a failed request and a host that rejected the certificate, with a Bypass button.">
+            <picture>
+              <source srcset="images/issues-light.webp" media="(prefers-color-scheme: light)">
+              <img src="images/issues-dark.webp" width="1440" height="860" loading="lazy" alt="The Issues list showing a failed request and a host that rejected the certificate, with a Bypass button.">
+            </picture>
             <figcaption>Failures and pinned hosts collected under Issues.</figcaption>
           </figure>
         </div>
