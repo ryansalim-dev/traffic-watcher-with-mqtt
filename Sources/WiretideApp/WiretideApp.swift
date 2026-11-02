@@ -42,6 +42,8 @@ struct WiretideApp: App {
                     .frame(minWidth: 500, minHeight: 300)
             }
         }
+        // The toolbar carries the recording control and the filter field; the window title would only crowd it.
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             UpdateCommands(updates: updates)
             CaptureCommands(model: setup.model)

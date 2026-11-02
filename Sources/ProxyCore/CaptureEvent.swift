@@ -28,11 +28,13 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     /// Where a breakpoint paused this exchange; the request and response are what was actually sent,
     /// after any edits. Nil when it went straight through.
     public var breakpoint: BreakpointStages?
+    /// DNS, connect, TLS, waiting and download times of the upstream request, when the proxy sent one.
+    public var timing: HTTPTiming?
 
     public init(id: UUID = UUID(), startedAt: Date, duration: TimeInterval, method: String, url: String,
                 requestHeaders: [CapturedHeader], requestBody: [UInt8], statusCode: Int?,
                 responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil,
-                breakpoint: BreakpointStages? = nil) {
+                breakpoint: BreakpointStages? = nil, timing: HTTPTiming? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.duration = duration
@@ -45,6 +47,7 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
         self.responseBody = responseBody
         self.error = error
         self.breakpoint = breakpoint
+        self.timing = timing
     }
 }
 

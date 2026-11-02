@@ -207,7 +207,8 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         var paused: BreakpointStages = []
         let sink = self.sink
 
-        func record(_ request: HTTPRequestDraft, status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?) {
+        func record(_ request: HTTPRequestDraft, status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?,
+                    timing: HTTPTiming? = nil) {
             sink.record(.httpExchange(HTTPExchange(
                 id: id,
                 startedAt: startedAt,
@@ -220,7 +221,8 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 responseHeaders: responseHeaders,
                 responseBody: responseBody,
                 error: error,
-                breakpoint: paused.isEmpty ? nil : paused
+                breakpoint: paused.isEmpty ? nil : paused,
+                timing: timing
             )))
         }
 
@@ -323,7 +325,8 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                             self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
                             return
                         }
-                        record(request, status: final.statusCode, responseHeaders: final.headers, responseBody: final.body, error: nil)
+                        record(request, status: final.statusCode, responseHeaders: final.headers, responseBody: final.body, error: nil,
+                               timing: response.timing)
                         var responseHead = HTTPResponseHead(version: head.version, status: HTTPResponseStatus(statusCode: final.statusCode))
                         responseHead.headers = HTTPHeaders(final.headers.map { ($0.name, $0.value) }).removingHopByHop()
                         responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(final.body.count))

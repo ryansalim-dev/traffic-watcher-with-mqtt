@@ -30,6 +30,16 @@ enum Theme {
 
     // MARK: Surfaces
 
+    // The graphite palette from the approved mockups, used instead of the system's neutral grays.
+    /// The timeline and topic list.
+    static let canvas = Color(light: 0xFFFFFF, dark: 0x15181C)
+    /// The sidebar column.
+    static let sidebar = Color(light: 0xEEF0F2, dark: 0x1B1F24)
+    /// The toolbar strip and sheet footers.
+    static let bar = Color(light: 0xF7F8F9, dark: 0x1A1D22)
+    /// The inspector column and sheets.
+    static let panel = Color(light: 0xFAFBFB, dark: 0x171A1F)
+
     /// A quiet fill for capsules, fields and cards.
     static let fill = Color(light: 0x000000, lightOpacity: 0.05, dark: 0xFFFFFF, darkOpacity: 0.06)
     static let hairline = Color(light: 0x000000, lightOpacity: 0.08, dark: 0xFFFFFF, darkOpacity: 0.07)

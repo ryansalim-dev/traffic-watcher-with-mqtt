@@ -47,6 +47,10 @@ final class ProxyCoreTests: XCTestCase {
         XCTAssertEqual(exchange.requestBody, Array("hello".utf8))
         XCTAssertTrue(exchange.responseHeaders.contains(CapturedHeader(name: "X-Upstream", value: "1")))
         XCTAssertNil(exchange.error)
+        let timing = try XCTUnwrap(exchange.timing, "plain HTTP exchanges record their phases")
+        XCTAssertNil(timing.tls)
+        XCTAssertEqual(timing.phases.map(\.phase), [.dns, .connect, .waiting, .download])
+        XCTAssertLessThanOrEqual(timing.total, exchange.duration + 0.001)
 
         try await proxy.stop()
         try await upstream.close()

@@ -82,6 +82,33 @@ public enum SampleTraffic {
         return events
     }
 
+    /// A minute of kitchen temperature readings, one every few seconds, for the topic chart.
+    public static func temperatureReadings(count: Int = 24, endingAt end: Date = Date()) -> [CaptureEvent] {
+        var session = MQTTSession()
+        let connection = UUID()
+        var events: [CaptureEvent] = []
+        _ = try? session.receive(MQTTBytes.connect(clientID: "thermo-01", keepAlive: 60), from: .clientToBroker)
+        for index in 0..<count {
+            let celsius = 21.2 + 0.6 * sin(Double(index) / 3.5) + 0.04 * Double(index % 4)
+            let humidity = 0.42 + 0.03 * cos(Double(index) / 4)
+            let payload = String(format: #"{"celsius":%.1f,"humidity":%.2f}"#, celsius, humidity)
+            let bytes = MQTTBytes.publish(topic: "home/kitchen/temperature", payload: Array(payload.utf8), retain: false)
+            let date = end.addingTimeInterval(-Double(count - index) * 2.5)
+            for event in (try? session.receive(bytes, from: .clientToBroker)) ?? [] {
+                events.append(.mqtt(MQTTCaptureEvent(connectionID: connection, timestamp: date, broker: "broker.example.com:1883", event: event)))
+            }
+        }
+        return events
+    }
+
+    /// A plausible phase split: DNS 5%, connect 11%, TLS 17%, waiting 55%, download the rest.
+    static func timing(_ duration: TimeInterval, tls: Bool) -> HTTPTiming {
+        let parts: [Double] = tls ? [4, 9, 14, 46, 11] : [4, 9, 0, 46, 11]
+        let scale = duration / parts.reduce(0, +)
+        return HTTPTiming(dns: parts[0] * scale, connect: parts[1] * scale, tls: tls ? parts[2] * scale : nil,
+                          waiting: parts[3] * scale, download: parts[4] * scale)
+    }
+
     private static func http(at date: Date, duration: TimeInterval, method: String, url: String, status: Int?,
                              contentType: String?, requestBody: String = "", body: String = "",
                              bodyBytes: [UInt8]? = nil) -> HTTPExchange {
@@ -104,7 +131,8 @@ public enum SampleTraffic {
         if let contentType { responseHeaders.insert(CapturedHeader(name: "Content-Type", value: contentType), at: 1) }
         return HTTPExchange(startedAt: date, duration: duration, method: method, url: url,
                             requestHeaders: requestHeaders, requestBody: Array(requestBody.utf8), statusCode: status,
-                            responseHeaders: responseHeaders, responseBody: response)
+                            responseHeaders: responseHeaders, responseBody: response,
+                            timing: status == nil ? nil : timing(duration, tls: url.hasPrefix("https://")))
     }
 }
 

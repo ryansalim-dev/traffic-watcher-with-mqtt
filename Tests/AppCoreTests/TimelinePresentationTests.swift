@@ -1,4 +1,5 @@
 @testable import AppCore
+import ProxyCore
 import CaptureStore
 import Foundation
 import XCTest
@@ -81,8 +82,17 @@ final class TimelinePresentationTests: XCTestCase {
         model.section = .http
         XCTAssertTrue(model.visibleRows.allSatisfy { $0.kind == .http && $0.host == "api.example.com" })
 
+        model.section = .all
+        model.hostFilter = nil
+        model.methodFilter = "PUT"
+        XCTAssertEqual(model.visibleRows.map(\.badge), ["503"])
+        model.methodFilter = nil
+        model.statusClassFilter = 3
+        XCTAssertEqual(model.visibleRows.map(\.badge), ["304"])
+
         model.newSession()
         XCTAssertNil(model.hostFilter)
+        XCTAssertNil(model.statusClassFilter)
     }
 
     @MainActor
@@ -101,5 +111,126 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(ActivityHistogram.counts(of: times, buckets: 3, bucketLength: 5, endingAt: end), [0, 2, 2])
         XCTAssertEqual(ActivityHistogram.counts(of: [], buckets: 2, bucketLength: 1, endingAt: end), [0, 0])
         XCTAssertEqual(ActivityHistogram.counts(of: times, buckets: 0, bucketLength: 1, endingAt: end), [])
+    }
+}
+
+final class TopicHistoryTests: XCTestCase {
+    func testHistoryIsCappedAndNumericFieldsChart() {
+        var tree = TopicTree()
+        let start = Date(timeIntervalSince1970: 0)
+        for index in 0..<(TopicNode.historyLimit + 5) {
+            let payload = #"{"celsius":\#(20 + Double(index % 3)),"label":"k","on":true}"#
+            tree.record(topic: "home/kitchen/temperature", payload: Array(payload.utf8), retained: false,
+                        at: start.addingTimeInterval(Double(index)))
+        }
+        let node = tree.node(for: "home/kitchen/temperature")
+        XCTAssertEqual(node?.history.count, TopicNode.historyLimit)
+        XCTAssertEqual(node?.history.first?.date, start.addingTimeInterval(5))
+        XCTAssertEqual(node?.messageCount, TopicNode.historyLimit + 5)
+
+        let series = NumericSeries.series(from: node?.history ?? [])
+        XCTAssertEqual(series.map(\.field), ["celsius"])
+        XCTAssertEqual(series.first?.minimum, 20)
+        XCTAssertEqual(series.first?.maximum, 22)
+    }
+
+    func testBareNumbersAndNonNumericPayloads() {
+        let samples = ["412", "415", "online", ""].enumerated().map {
+            TopicSample(date: Date(timeIntervalSince1970: Double($0.offset)), payload: Array($0.element.utf8))
+        }
+        XCTAssertEqual(NumericSeries.series(from: samples).map(\.field), ["value"])
+        XCTAssertEqual(NumericSeries.series(from: samples).first?.latest, 415)
+        XCTAssertEqual(NumericSeries.series(from: [samples[2]]), [])
+    }
+}
+
+final class SampleReadingsTests: XCTestCase {
+    func testTemperatureReadingsChartCelsiusAndHumidity() {
+        var tree = TopicTree()
+        for event in SampleTraffic.temperatureReadings(count: 10) {
+            if case .mqtt(let capture) = event { tree.record(capture.event, at: capture.timestamp) }
+        }
+        let node = tree.node(for: "home/kitchen/temperature")
+        XCTAssertEqual(node?.messageCount, 10)
+        XCTAssertEqual(NumericSeries.series(from: node?.history ?? []).map(\.field), ["celsius", "humidity"])
+    }
+}
+
+final class CodePresentationTests: XCTestCase {
+    func testHighlighterTagsKeysStringsNumbersAndLiterals() {
+        let lines = JSONHighlighter.lines("{\n  \"id\": \"thermo-01\",\n  \"t\": -21.5e1,\n  \"on\": true,\n  \"x\": null\n}")
+        XCTAssertEqual(lines.count, 6)
+        XCTAssertEqual(lines[1], [CodeToken(.plain, "  "), CodeToken(.key, "\"id\""), CodeToken(.plain, ": "),
+                                  CodeToken(.string, "\"thermo-01\""), CodeToken(.plain, ",")])
+        XCTAssertEqual(lines[2].first { $0.kind == .number }?.text, "-21.5e1")
+        XCTAssertEqual(lines[3].first { $0.kind == .literal }?.text, "true")
+        XCTAssertEqual(lines[4].first { $0.kind == .literal }?.text, "null")
+        // Half-typed input still tokenizes.
+        XCTAssertEqual(JSONHighlighter.tokens("{\"a\": \"unterminated").map(\.kind), [.plain, .key, .plain, .string])
+        XCTAssertEqual(JSONHighlighter.tokens("\"a\\\"b\"").map(\.text), ["\"a\\\"b\""])
+    }
+
+    func testTreeKeepsDocumentOrder() throws {
+        let tree = try XCTUnwrap(JSONTreeNode.parse(Array(#"{"z":1,"a":[true,"x"],"m":{}}"#.utf8)))
+        XCTAssertEqual(tree.kind, .object)
+        XCTAssertEqual(tree.value, "3 keys")
+        XCTAssertEqual(tree.children?.map(\.key), ["z", "a", "m"])
+        let array = try XCTUnwrap(tree.children?[1])
+        XCTAssertEqual(array.value, "2 items")
+        XCTAssertEqual(array.children?.map(\.value), ["true", "\"x\""])
+        XCTAssertEqual(array.children?.map(\.id), ["$.a[0]", "$.a[1]"])
+        XCTAssertNil(JSONTreeNode.parse(Array("{nope".utf8)))
+    }
+
+    func testRawAndCurl() {
+        let exchange = HTTPExchange(startedAt: Date(), duration: 0.1, method: "POST", url: "https://api.example.com/v2/login?x=1",
+                                    requestHeaders: [CapturedHeader(name: "Host", value: "api.example.com"),
+                                                     CapturedHeader(name: "Content-Type", value: "application/json; charset=utf-8")],
+                                    requestBody: Array("{\"u\":\"it's\"}".utf8), statusCode: 201,
+                                    responseHeaders: [CapturedHeader(name: "Content-Type", value: "application/json")], responseBody: [])
+        XCTAssertEqual(exchange.rawRequest,
+                       "POST /v2/login?x=1 HTTP/1.1\nHost: api.example.com\nContent-Type: application/json; charset=utf-8\n\n{\"u\":\"it's\"}")
+        XCTAssertEqual(exchange.rawResponse, "HTTP/1.1 201 Created\nContent-Type: application/json\n")
+        XCTAssertEqual(exchange.requestContentType, "application/json")
+        XCTAssertEqual(exchange.curlCommand,
+                       "curl \\\n  -X POST \\\n  'https://api.example.com/v2/login?x=1' \\\n  -H 'Content-Type: application/json; charset=utf-8' \\\n  --data-binary '{\"u\":\"it'\\''s\"}'")
+    }
+
+    func testSampleTimingAddsUp() {
+        let timing = SampleTraffic.timing(0.084, tls: true)
+        XCTAssertEqual(timing.total, 0.084, accuracy: 0.0001)
+        XCTAssertEqual(timing.phases.count, 5)
+        XCTAssertNil(SampleTraffic.timing(0.1, tls: false).tls)
+    }
+}
+
+final class ModelQueryTests: XCTestCase {
+    func testTopicFilterKeepsAncestorsAndLeafList() {
+        var tree = TopicTree()
+        for topic in ["home/kitchen/temperature", "home/kitchen/status", "home/garage/status", "sensors/porch/lux"] {
+            tree.record(topic: topic, payload: Array("1".utf8), retained: false, at: Date())
+        }
+        let filtered = tree.filtered(matching: "STATUS")
+        XCTAssertEqual(filtered.map(\.id), ["home"])
+        XCTAssertEqual(filtered[0].children.map(\.id), ["home/garage", "home/kitchen"])
+        XCTAssertEqual(filtered[0].children[1].children.map(\.id), ["home/kitchen/status"])
+        XCTAssertEqual(tree.filtered(matching: " ").count, 2)
+        XCTAssertEqual(tree.leafTopics, ["home/garage/status", "home/kitchen/status", "home/kitchen/temperature", "sensors/porch/lux"])
+    }
+
+    func testRateFormat() {
+        XCTAssertEqual(RateFormat.perSecond(0), "0/s")
+        XCTAssertEqual(RateFormat.perSecond(0.05), "3/min")
+        XCTAssertEqual(RateFormat.perSecond(0.93), "0.9/s")
+        XCTAssertEqual(RateFormat.perSecond(12.4), "12/s")
+    }
+}
+
+final class CompactSizeTests: XCTestCase {
+    func testCompactByteCount() {
+        XCTAssertEqual(Formatting.compactByteCount(145), "145 B")
+        XCTAssertEqual(Formatting.compactByteCount(4300), "4.2 KB")
+        XCTAssertEqual(Formatting.compactByteCount(48 * 1024), "48 KB")
+        XCTAssertEqual(Formatting.compactByteCount(1_400_000), "1.3 MB")
     }
 }

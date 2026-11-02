@@ -9,7 +9,7 @@ import ProxyCore
 @Observable
 public final class MQTTComposer {
     public enum PayloadFormat: String, CaseIterable, Identifiable, Sendable {
-        case text = "Text", hex = "Hex"
+        case json = "JSON", text = "Text", hex = "Hex"
         public var id: String { rawValue }
     }
 
@@ -24,6 +24,8 @@ public final class MQTTComposer {
     /// MQTT 5 only.
     public var contentType = ""
     public var userProperties: [MQTTOutgoingMessage.UserProperty] = []
+    /// When the replayed message was captured; nil for a new message.
+    public private(set) var replayedAt: Date?
     /// Properties copied from a replayed message that the sheet doesn't edit (response topic, correlation data…).
     private var replayedExtras: MQTTOutgoingMessage?
 
@@ -67,6 +69,7 @@ public final class MQTTComposer {
         let message = MQTTOutgoingMessage(replaying: publish, resolvedTopic: capture.event.resolvedTopic)
         load(message)
         replayedExtras = message
+        replayedAt = capture.timestamp
         target = Self.target(forBroker: capture.broker, version: capture.event.version, forwarders: forwarders, keeping: target)
         repeatCount = 1
         status = nil
@@ -76,6 +79,7 @@ public final class MQTTComposer {
     public func preparePublish(toTopic topic: String, broker: String?, version: MQTTVersion?, forwarders: [ForwarderConfiguration]) {
         load(MQTTOutgoingMessage(topic: topic, payload: []))
         replayedExtras = nil
+        replayedAt = nil
         if let broker {
             target = Self.target(forBroker: broker, version: version ?? target.version, forwarders: forwarders, keeping: target)
         }
@@ -89,7 +93,7 @@ public final class MQTTComposer {
         contentType = message.contentType ?? ""
         userProperties = message.userProperties
         if let text = String(bytes: message.payload, encoding: .utf8), !text.contains("\0") {
-            payloadFormat = .text
+            payloadFormat = Self.looksLikeJSONDocument(message.payload) ? .json : .text
             payloadText = text
         } else {
             payloadFormat = .hex
@@ -119,7 +123,7 @@ public final class MQTTComposer {
     /// The payload bytes, or nil when the hex isn't valid.
     public var payload: [UInt8]? {
         switch payloadFormat {
-        case .text: Array(payloadText.utf8)
+        case .json, .text: Array(payloadText.utf8)
         case .hex: Self.bytes(fromHex: payloadText)
         }
     }
@@ -133,7 +137,7 @@ public final class MQTTComposer {
             message.responseTopic = extras.responseTopic
             message.correlationData = extras.correlationData
             message.messageExpiryInterval = extras.messageExpiryInterval
-            message.payloadIsUTF8 = extras.payloadIsUTF8 && payloadFormat == .text
+            message.payloadIsUTF8 = extras.payloadIsUTF8 && payloadFormat != .hex
         }
         return message
     }
@@ -182,6 +186,25 @@ public final class MQTTComposer {
     /// Stops a repeat run between messages.
     public func cancel() {
         sending?.cancel()
+    }
+
+    /// True when the payload is valid JSON (in JSON or Text mode).
+    public var payloadIsValidJSON: Bool {
+        guard payloadFormat != .hex, let payload, !payload.isEmpty else { return false }
+        return Formatting.prettyJSON(payload) != nil
+    }
+
+    /// Pretty-prints a JSON payload in place. Does nothing when it isn't valid JSON.
+    public func formatPayload() {
+        guard payloadFormat != .hex, let pretty = Formatting.prettyJSON(Array(payloadText.utf8)) else { return }
+        payloadText = pretty
+    }
+
+    /// An object or array, as opposed to a bare number or string that also happens to parse as JSON.
+    static func looksLikeJSONDocument(_ bytes: [UInt8]) -> Bool {
+        guard let first = bytes.first(where: { ![0x20, 0x09, 0x0A, 0x0D].contains($0) }),
+              first == UInt8(ascii: "{") || first == UInt8(ascii: "[") else { return false }
+        return Formatting.prettyJSON(bytes) != nil
     }
 
     // MARK: Hex
