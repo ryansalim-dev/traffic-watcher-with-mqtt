@@ -337,7 +337,7 @@ struct RulesEmptyState: View {
                     center.addHTTPRule(kind: .rewrite)
                 }
                 RuleKindCard(title: "MQTT Rewrite", pill: "MQTT", color: Theme.mqtt, symbol: "antenna.radiowaves.left.and.right",
-                             text: "Change the topic, payload, JSON values or retain flag of messages through a forwarder.") {
+                             text: "Change the topic, payload, JSON values or retain flag of messages, through a forwarder or over WebSockets.") {
                     center.addMQTTRule()
                 }
             }
