@@ -206,14 +206,40 @@ public enum HeaderText {
         headers.map { "\($0.name): \($0.value)" }.joined(separator: "\n")
     }
 
-    /// Lines without a colon or with an empty name are ignored.
+    /// Lines without a colon or with an empty name are ignored, and so are `//` lines.
     public static func parse(_ text: String) -> [CapturedHeader] {
-        text.split(whereSeparator: \.isNewline).compactMap { line in
-            guard let colon = line.firstIndex(of: ":") else { return nil }
-            let name = line[..<colon].trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty else { return nil }
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            return CapturedHeader(name: name, value: value)
+        EditableHeader.sent(parseRows(text))
+    }
+
+    /// The raw view of a header editor: one `Name: value` per line, with switched-off rows
+    /// commented out as `// Name: value`. Rows with neither a name nor a value are left out.
+    public static func format(_ rows: [EditableHeader]) -> String {
+        rows.compactMap { row in
+            if row.name.isEmpty && row.value.isEmpty { return nil }
+            return (row.isEnabled ? "" : "// ") + "\(row.name): \(row.value)"
         }
+        .joined(separator: "\n")
+    }
+
+    /// Reads the raw view back into rows. Lines without a colon or with an empty name are ignored,
+    /// as is a `//` line that isn't a header. Row ids are kept by position, so a table that was
+    /// showing these rows doesn't lose its place.
+    public static func parseRows(_ text: String, reusing previous: [EditableHeader] = []) -> [EditableHeader] {
+        var rows: [EditableHeader] = []
+        for line in text.split(whereSeparator: \.isNewline) {
+            var content = Substring(line).drop(while: \.isWhitespace)
+            var isEnabled = true
+            if content.hasPrefix("//") {
+                isEnabled = false
+                content = content.dropFirst(2)
+            }
+            guard let colon = content.firstIndex(of: ":") else { continue }
+            let name = content[..<colon].trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { continue }
+            let value = content[content.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            let id = rows.count < previous.count ? previous[rows.count].id : UUID()
+            rows.append(EditableHeader(id: id, isEnabled: isEnabled, name: name, value: value))
+        }
+        return rows
     }
 }

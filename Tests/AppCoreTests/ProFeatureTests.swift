@@ -85,6 +85,47 @@ final class BreakpointCenterTests: XCTestCase {
         XCTAssertEqual(HeaderText.parse(HeaderText.format(headers)), headers)
         XCTAssertEqual(HeaderText.parse("  A :  b \nno colon\n: empty\n\nC:"), [CapturedHeader(name: "A", value: "b"), CapturedHeader(name: "C", value: "")])
     }
+
+    func testHeaderRowsRawRoundTrip() {
+        let rows = [EditableHeader(name: "Accept", value: "application/json"),
+                    EditableHeader(isEnabled: false, name: "Authorization", value: "Bearer abc"),
+                    EditableHeader(name: "Set-Cookie", value: "a=1"),
+                    EditableHeader(name: "Set-Cookie", value: "b=2"),
+                    EditableHeader(name: "", value: "")]
+        let text = HeaderText.format(rows)
+        XCTAssertEqual(text, "Accept: application/json\n// Authorization: Bearer abc\nSet-Cookie: a=1\nSet-Cookie: b=2")
+        let parsed = HeaderText.parseRows(text, reusing: rows)
+        XCTAssertEqual(parsed, Array(rows.prefix(4)), "ids kept by position, the blank row dropped")
+        XCTAssertEqual(EditableHeader.sent(parsed), [CapturedHeader(name: "Accept", value: "application/json"),
+                                                     CapturedHeader(name: "Set-Cookie", value: "a=1"),
+                                                     CapturedHeader(name: "Set-Cookie", value: "b=2")])
+        let commented = HeaderText.parseRows("//X-Off:1\n// just a note\n  //  Y : 2")
+        XCTAssertEqual(commented.map(\.isEnabled), [false, false])
+        XCTAssertEqual(commented.map(\.name), ["X-Off", "Y"])
+        XCTAssertEqual(commented.map(\.value), ["1", "2"])
+        XCTAssertEqual(HeaderText.parse("// X: 1\nA: b"), [CapturedHeader(name: "A", value: "b")], "commented lines aren't sent")
+    }
+
+    func testMapLocalKeepsSwitchedOffHeaders() throws {
+        var response = MapLocalResponse(headers: [CapturedHeader(name: "Content-Type", value: "application/json")])
+        XCTAssertEqual(response.editableHeaders.map(\.name), ["Content-Type"])
+        var rows = response.editableHeaders
+        rows.append(EditableHeader(isEnabled: false, name: "Cache-Control", value: "no-store"))
+        rows.append(EditableHeader(name: "", value: ""))
+        response.editableHeaders = rows
+        XCTAssertEqual(response.headers, [CapturedHeader(name: "Content-Type", value: "application/json")])
+        XCTAssertEqual(response.editableHeaders, rows, "switched-off and blank rows survive")
+
+        let decoded = try JSONDecoder().decode(MapLocalResponse.self, from: JSONEncoder().encode(response))
+        XCTAssertEqual(decoded.editableHeaders, rows)
+
+        response.headers = [CapturedHeader(name: "X-Other", value: "1")]
+        XCTAssertEqual(response.editableHeaders.map(\.name), ["X-Other"], "rows rebuilt when headers changed elsewhere")
+
+        let old = try JSONDecoder().decode(MapLocalResponse.self, from: Data(#"{"statusCode":200,"headers":[{"name":"A","value":"b"}],"body":""}"#.utf8))
+        XCTAssertNil(old.headerRows)
+        XCTAssertEqual(old.editableHeaders.map(\.name), ["A"])
+    }
 }
 
 final class MQTTComposerTests: XCTestCase {

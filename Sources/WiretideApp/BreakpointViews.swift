@@ -54,7 +54,7 @@ struct BreakpointEditor: View {
     @State private var method = ""
     @State private var url = ""
     @State private var status = 200
-    @State private var headersText = ""
+    @State private var headerRows: [EditableHeader] = []
     @State private var bodyText = ""
     /// Set when the body isn't text; it is then passed on untouched.
     @State private var binaryBody: [UInt8]?
@@ -101,18 +101,11 @@ struct BreakpointEditor: View {
                             }
                         }
                     }
-                    FieldGroup(label: "Headers · one per line") {
-                        CodeEditor(text: $headersText, fontSize: 12)
-                            .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                    }
+                    HeaderEditor(rows: $headerRows)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
-                .frame(width: 300)
+                .frame(width: 340)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
 
@@ -152,7 +145,7 @@ struct BreakpointEditor: View {
             }
             footer
         }
-        .frame(minWidth: 740, idealWidth: 760, minHeight: 520, idealHeight: 560)
+        .frame(minWidth: 780, idealWidth: 800, minHeight: 520, idealHeight: 560)
         .background(Theme.panel)
         .tint(Theme.accent)
         .onAppear(perform: load)
@@ -248,7 +241,7 @@ struct BreakpointEditor: View {
         method = item.request.method
         url = item.request.url
         status = item.response?.statusCode ?? 200
-        headersText = HeaderText.format(headers)
+        headerRows = headers.map(EditableHeader.init)
         if let text = String(bytes: bytes, encoding: .utf8) {
             bodyText = text
             binaryBody = nil
@@ -260,7 +253,7 @@ struct BreakpointEditor: View {
     }
 
     private func resume() {
-        let headers = HeaderText.parse(headersText)
+        let headers = EditableHeader.sent(headerRows)
         if isRequest {
             center.resume(item.id, request: HTTPRequestDraft(method: method.trimmingCharacters(in: .whitespaces).uppercased(),
                                                              url: url.trimmingCharacters(in: .whitespaces),

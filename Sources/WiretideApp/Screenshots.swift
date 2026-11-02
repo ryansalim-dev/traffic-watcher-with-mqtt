@@ -311,6 +311,13 @@ enum Screenshots {
                                     stagedSheet: AnyView(SheetStage(height: 540) {
             BreakpointEditor(center: center, item: center.paused[0])
         })), size: stageSize, dark: false, name: "14-breakpoint-request", into: directory, dimToolbar: true)
+        // The same headers in the Raw view, then back to the table for the rest.
+        UserDefaults.standard.set("raw", forKey: "headerEditorMode")
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(height: 540) {
+            BreakpointEditor(center: center, item: center.paused[0])
+        })), size: stageSize, dark: true, name: "14b-breakpoint-request-raw-dark", into: directory, dimToolbar: true)
+        UserDefaults.standard.removeObject(forKey: "headerEditorMode")
         try await shoot(ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
                                     stagedSheet: AnyView(SheetStage(height: 540) {
             BreakpointEditor(center: center, item: center.paused[1])
@@ -395,6 +402,8 @@ enum Screenshots {
           "total": 0
         }
         """
+        // One header switched off, as in the table's off state.
+        mapLocal.mapLocal.editableHeaders += [EditableHeader(isEnabled: false, name: "Cache-Control", value: "no-store")]
         center.httpRules[0] = mapLocal
         center.addHTTPRule(kind: .mapRemote, pattern: "api.example.com/v2/*")
         center.httpRules[1].name = "API on localhost"

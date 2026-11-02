@@ -85,6 +85,9 @@ public struct MapLocalResponse: Codable, Equatable, Hashable, Sendable {
     public var body: String
     /// When set, the body comes from this file instead of `body`.
     public var filePath: String?
+    /// The header editor's rows, including ones switched off. Only `headers` is sent; this keeps the
+    /// switched-off rows and their place between edits.
+    public var headerRows: [EditableHeader]?
 
     public init(statusCode: Int = 200,
                 headers: [CapturedHeader] = [CapturedHeader(name: "Content-Type", value: "application/json")],
@@ -93,6 +96,19 @@ public struct MapLocalResponse: Codable, Equatable, Hashable, Sendable {
         self.headers = headers
         self.body = body
         self.filePath = filePath
+    }
+
+    /// The rows to edit. Saved rows are used while they still match `headers`; if `headers` was
+    /// changed some other way, the rows are rebuilt from it.
+    public var editableHeaders: [EditableHeader] {
+        get {
+            if let headerRows, EditableHeader.sent(headerRows) == headers { return headerRows }
+            return headers.map(EditableHeader.init)
+        }
+        set {
+            headerRows = newValue
+            headers = EditableHeader.sent(newValue)
+        }
     }
 
     /// Builds the response, reading the file if there is one. A file that can't be read gives a
