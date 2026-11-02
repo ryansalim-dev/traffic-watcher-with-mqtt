@@ -74,7 +74,7 @@
       <div class="wrap">
         <p class="pill"><span class="dot"></span><span data-prelaunch>Wiretide 1.0 is almost here</span><span data-launched hidden>Version 1.0</span></p>
         <h1>Your app talks HTTP <em>and</em> MQTT.<br>Now you can watch both.</h1>
-        <p class="lede">Wiretide is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, then lets you pause, rewrite, script and replay them.</p>
+        <p class="lede">Wiretide is a native Mac debugging proxy that shows your app's HTTPS, WebSocket and MQTT traffic in one timeline. Find the bug faster, then pause, change and replay traffic to prove the fix.</p>
         <div class="cta-row">
           <a class="btn btn-primary" data-download data-launch-label="Download for macOS" href="#waitlist">
             <svg aria-hidden="true" data-prelaunch width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a6 6 0 0 0-6 6v3.59l-1.7 1.7A1 1 0 0 0 5 15h14a1 1 0 0 0 .7-1.7L18 11.58V8a6 6 0 0 0-6-6Zm-2.83 15a3 3 0 0 0 5.66 0H9.17Z"/></svg>
@@ -105,47 +105,47 @@
     <section id="features" class="section">
       <div class="wrap">
         <p class="eyebrow">Free features</p>
-        <h2>Everything a debugging proxy should do, without the protocol blind spot.</h2>
+        <h2>Everything you expect from a debugging proxy, plus the traffic others miss.</h2>
         <div class="grid features">
           <article class="card">
             <div class="icon i-http" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.93 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.93 8ZM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96ZM4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4H4.26Zm.81 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.07 16Zm2.95-8H5.07a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.02 8ZM12 19.96A14.1 14.1 0 0 1 10.09 16h3.82A14.1 14.1 0 0 1 12 19.96ZM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4Zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56ZM16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4h-3.38Z"/></svg></div>
             <h3>Decrypt HTTPS</h3>
-            <p>A local root certificate issues per-host certificates on the fly. Install it on a device or straight into the iOS Simulator from Settings.</p>
+            <p>See inside encrypted requests from Mac apps, the iOS Simulator and real devices. Wiretide sets up the certificate for you.</p>
           </article>
           <article class="card">
             <div class="icon i-mqtt" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4a1 1 0 0 1 1-1 16 16 0 0 1 16 16 1 1 0 1 1-2 0A14 14 0 0 0 5 5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1 10 10 0 0 1 10 10 1 1 0 1 1-2 0 8 8 0 0 0-8-8 1 1 0 0 1-1-1Zm2 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg></div>
             <h3>Decode MQTT</h3>
-            <p>Every packet from CONNECT to DISCONNECT, for MQTT 3.1.1 and 5, with properties, QoS, retain flags and topic aliases resolved.</p>
+            <p>Read every MQTT message in plain language, from the first connect to the last disconnect, on MQTT 3.1.1 and 5.</p>
           </article>
           <article class="card">
             <div class="icon i-ws" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16.3 3.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4L17.58 8H4a1 1 0 0 1 0-2h13.59L16.3 4.7a1 1 0 0 1 0-1.4Zm-8.6 10a1 1 0 0 1 0 1.4L6.42 16H20a1 1 0 1 1 0 2H6.41l1.3 1.3a1 1 0 1 1-1.42 1.4l-3-3a1 1 0 0 1 0-1.4l3-3a1 1 0 0 1 1.42 0Z"/></svg></div>
             <h3>Follow WebSockets</h3>
-            <p>Upgrades over HTTP or decrypted HTTPS are relayed with every frame decoded. MQTT-over-WebSocket subprotocols show up as MQTT.</p>
+            <p>Watch every WebSocket message in both directions, decoded and searchable. MQTT over WebSocket shows up as MQTT.</p>
           </article>
           <article class="card">
             <div class="icon i-search" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.19l4.6 4.6a1 1 0 0 1-1.4 1.42l-4.6-4.6A7 7 0 1 1 10 3Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z"/></svg></div>
             <h3>Search and filter</h3>
-            <p>Full-text search across URLs, headers, bodies, topics and payloads, plus one-click filters for JSON, media, errors and publishes.</p>
+            <p>Find any request or message in seconds by URL, header, body, topic or payload. One-click filters narrow it down to errors or JSON.</p>
           </article>
           <article class="card">
             <div class="icon i-warn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6l-9-4Zm0 2.18 7 3.11V12c0 3.9-2.9 7.3-7 8-4.1-.7-7-4.1-7-8V7.29l7-3.11ZM11 7h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg></div>
-            <h3>Spot pinned hosts</h3>
-            <p>When a client rejects the certificate, Wiretide says so instead of failing silently. Bypass the host with one click.</p>
+            <h3>Know why it failed</h3>
+            <p>When an app refuses to be inspected, Wiretide tells you why instead of failing quietly, and lets you skip that host in one click.</p>
           </article>
           <article class="card">
             <div class="icon i-export" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a1 1 0 0 1 .7.3l4 4a1 1 0 1 1-1.4 1.4L13 6.42V15a1 1 0 1 1-2 0V6.41L8.7 8.7a1 1 0 1 1-1.4-1.4l4-4A1 1 0 0 1 12 3ZM5 14a1 1 0 0 1 1 1v3h12v-3a1 1 0 1 1 2 0v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z"/></svg></div>
             <h3>Timing and export</h3>
-            <p>DNS, connect, TLS, waiting and download phases for every request. Export HAR 1.2 for HTTP and JSON Lines for MQTT.</p>
+            <p>See where the time goes on every request, from lookup to download. Export a capture to share it with your team.</p>
           </article>
           <article class="card">
             <div class="icon i-search" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1ZM7.05 5.64a1 1 0 0 1 0 1.41 7 7 0 1 0 9.9 0 1 1 0 1 1 1.41-1.41 9 9 0 1 1-12.72 0 1 1 0 0 1 1.41 0Z"/></svg></div>
             <h3>One-click setup</h3>
-            <p>Start capture and Mac apps and the iOS Simulator go through Wiretide, with no proxy settings to change. Your old settings come back when you stop.</p>
+            <p>Press record and your Mac apps and the iOS Simulator flow through Wiretide. No settings to change, and everything goes back when you stop.</p>
           </article>
           <article class="card">
             <div class="icon i-http" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8.7 7.3a1 1 0 0 1 0 1.4L5.42 12l3.3 3.3a1 1 0 1 1-1.42 1.4l-4-4a1 1 0 0 1 0-1.4l4-4a1 1 0 0 1 1.42 0Zm6.6 0a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4l3.29-3.3-3.3-3.3a1 1 0 0 1 0-1.4Z"/></svg></div>
             <h3>Readable bodies</h3>
-            <p>gzip and deflate responses are decoded, so bodies are readable, searchable and work with rewrites and scripts. JSON gets a tree view.</p>
+            <p>Compressed responses are decoded for you, so every body is readable and searchable. JSON opens as a tree you can expand.</p>
           </article>
         </div>
       </div>
@@ -156,12 +156,12 @@
         <div class="split-copy">
           <p class="eyebrow eyebrow-mqtt">Built for MQTT</p>
           <h2>See your broker conversation, not a wall of bytes.</h2>
-          <p>Most proxies stop at HTTP. IoT and real-time apps don't. Point your app at a local port and Wiretide relays it to your broker, decoding every packet on the way through.</p>
+          <p>Most debugging proxies stop at HTTP. Wiretide sits between your app and your MQTT broker and shows every message as it happens, so you know exactly what your app and devices are saying.</p>
           <ul class="checks">
-            <li><strong>Plain TCP, TLS or WebSocket.</strong> For MQTT over TLS it terminates and re-encrypts, so you see the packets without changing the broker.</li>
-            <li><strong>A live topic tree.</strong> Browse <code>home/kitchen/temperature</code> the way you think about it, with the last payload, message rate and counts per topic.</li>
-            <li><strong>Charts from your payloads.</strong> Pick a numeric JSON field and watch it change over the session.</li>
-            <li><strong>Session context.</strong> Client ID, protocol version, keep alive and per-direction topic aliases are tracked per connection.</li>
+            <li><strong>Works with the broker you have.</strong> Plain, encrypted or over WebSocket, with nothing to change on the broker.</li>
+            <li><strong>A live topic tree.</strong> Browse every MQTT topic as a tree, with the last payload, message rate and count for each.</li>
+            <li><strong>Charts from your messages.</strong> Plot any number in your payloads and watch it change over time.</li>
+            <li><strong>Every connection in context.</strong> See which client sent each message and how it connected.</li>
           </ul>
         </div>
         <div class="split-media">
@@ -169,7 +169,7 @@
             <picture>
               <source srcset="images/topics-light.webp" media="(prefers-color-scheme: light)">
               <img src="images/topics-dark.webp" width="1440" height="860" loading="lazy"
-                   alt="The MQTT topic tree with last payloads and rate sparklines, and a chart of the celsius field for home/kitchen/temperature in the inspector.">
+                   alt="The MQTT topic tree with last payloads and rate sparklines, and a chart of a payload value in the inspector.">
             </picture>
           </figure>
           <figure class="window window-offset">
@@ -188,13 +188,13 @@
         <div class="split-copy">
           <p class="eyebrow">Saved Sessions</p>
           <h2>Every capture is saved. Go back to any of them.</h2>
-          <p>Each recording becomes a session you can name, reopen and share. Open last week's bug repro in the timeline while live capture keeps recording behind it.</p>
+          <p>Every recording is saved for you. Reopen last week's bug in seconds while live capture keeps running, and share it when you need a second pair of eyes.</p>
           <ul class="checks">
-            <li><strong>Grouped by day.</strong> The Saved Sessions window (<kbd>⇧⌘O</kbd>) lists every session with its HTTP, MQTT and WebSocket counts.</li>
+            <li><strong>Find it by day.</strong> Every session is listed by date, with a count of what it captured.</li>
             <li><strong>Newest in the sidebar.</strong> The three most recent sessions are one click away, with a link to the rest.</li>
-            <li><strong>Back to live in one step.</strong> A banner over the timeline returns you to live capture (<kbd>⇧⌘L</kbd>).</li>
-            <li><strong>Rename, export or delete.</strong> Export any session as HAR or MQTT JSON Lines.</li>
-            <li><strong>Free keeps one saved session.</strong> Live capture is always on, and Free keeps one earlier session beside it. Starting another asks before it replaces the old one, so you can export it first. Pro keeps every session.</li>
+            <li><strong>Back to live in one click.</strong> A banner over the timeline takes you straight back to live capture.</li>
+            <li><strong>Rename, export or delete.</strong> Export any session to share it with a teammate.</li>
+            <li><strong>Free keeps one saved session.</strong> Wiretide asks before replacing it, so you can export it first. Pro keeps every session.</li>
           </ul>
         </div>
         <div class="split-media">
@@ -220,18 +220,18 @@
       <div class="wrap">
         <p class="eyebrow">Pro tools</p>
         <h2>Don't just watch the traffic. Change it.</h2>
-        <p class="sub">Test the edge cases your backend can't give you on demand: a slow response, a missing field, a broker that sends 41.5&nbsp;°C. Pro works on HTTP and MQTT alike.</p>
+        <p class="sub">Reproduce the bugs your backend won't give you on demand: a slow response, a missing field, a bad value from a device. Pro works on HTTP and MQTT alike.</p>
 
         <div class="pro-list">
           <article class="pro-item">
             <div class="pro-copy">
               <span class="pro-tag">Breakpoints</span>
               <h3>Pause a request before it leaves, or a response before your app sees it.</h3>
-              <p>Edit the method, URL, headers, status or body in place, then continue, return your edit or abort.</p>
+              <p>Change anything in place, then send your version on or cancel it. Test your error handling without touching the server.</p>
               <ul class="checks">
-                <li>Match by host, path and method, on requests, responses or both</li>
-                <li>JSON editor with formatting and validation</li>
-                <li>Edited exchanges are marked in the timeline</li>
+                <li>Pause only the requests you care about</li>
+                <li>Edit JSON with formatting and validation</li>
+                <li>Edited traffic is marked, so you never lose track</li>
               </ul>
             </div>
             <div class="pro-media">
@@ -248,13 +248,13 @@
           <article class="pro-item">
             <div class="pro-copy">
               <span class="pro-tag">Map &amp; Rewrite</span>
-              <h3>Mock an endpoint, point it at localhost, or fix a header on the fly.</h3>
-              <p>Rules apply live as traffic flows, with no restart and no code changes in your app.</p>
+              <h3>Mock an API, switch servers or fix a response without changing code.</h3>
+              <p>Rules apply live as traffic flows, with no restart and no new build.</p>
               <ul class="checks">
-                <li><strong>Map Local</strong> answers from an inline body or a file</li>
-                <li><strong>Map Remote</strong> sends matching requests to another server</li>
-                <li><strong>Rewrite</strong> URLs, headers, query, status, body and JSON values</li>
-                <li><strong>MQTT rules</strong> rewrite topics, payloads and retain flags over TCP, TLS and WebSockets</li>
+                <li><strong>Map Local</strong> answers a request with your own response</li>
+                <li><strong>Map Remote</strong> sends traffic to staging or your own machine</li>
+                <li><strong>Rewrite</strong> headers, status codes and JSON values on the way through</li>
+                <li><strong>MQTT rules</strong> change topics and payloads, even over encrypted or WebSocket connections</li>
               </ul>
             </div>
             <div class="pro-media has-offset">
@@ -267,7 +267,7 @@
               </figure>
               <figure class="window window-offset">
                 <img src="images/rewrite-mqtt-dark.webp" width="980" height="660" loading="lazy"
-                     alt="An MQTT rule that sets the celsius value and rewrites the topic of matching PUBLISH packets.">
+                     alt="An MQTT rule that changes the payload and topic of matching messages.">
               </figure>
             </div>
           </article>
@@ -276,11 +276,11 @@
             <div class="pro-copy">
               <span class="pro-tag">MQTT publish &amp; replay</span>
               <h3>Send any message to your broker, or replay one you captured.</h3>
-              <p>Pick a topic, QoS, retain flag and MQTT 5 properties, then send once or on a repeat to test how your app copes.</p>
+              <p>Send a test message, or replay a real one you captured, once or many times over, and see how your app copes.</p>
               <ul class="checks">
-                <li>Replay a captured PUBLISH with one click</li>
-                <li>JSON, text or hex payloads</li>
-                <li>Send N times at a fixed interval</li>
+                <li>Replay a captured message in one click</li>
+                <li>JSON, text or binary payloads</li>
+                <li>Repeat sends to put your app under load</li>
               </ul>
             </div>
             <div class="pro-media">
@@ -298,11 +298,11 @@
             <div class="pro-copy">
               <span class="pro-tag">Scripting</span>
               <h3>When a rule isn't enough, write a little JavaScript.</h3>
-              <p>Define <code>onRequest</code>, <code>onResponse</code> or <code>onPublish</code> to edit traffic, or answer locally with <code>respond()</code>.</p>
+              <p>Write a few lines of JavaScript to change requests, responses and MQTT messages as they pass, or answer a request yourself without reaching the server.</p>
               <ul class="checks">
-                <li>Highlighted editor with a live syntax check and templates</li>
-                <li>Console output, errors and a trial run on captured traffic</li>
-                <li>Runs on HTTP, MQTT and MQTT over WebSockets</li>
+                <li>Editor with highlighting, live error checks and ready-made templates</li>
+                <li>Try a script on traffic you already captured before turning it on</li>
+                <li>Works on HTTP and MQTT</li>
               </ul>
             </div>
             <div class="pro-media">
@@ -310,7 +310,7 @@
                 <picture>
                   <source srcset="images/scripts-light.webp" media="(prefers-color-scheme: light)">
                   <img src="images/scripts-dark.webp" width="1040" height="720" loading="lazy"
-                       alt="The Scripts window with an onResponse script that marks every device online, and a console showing its output.">
+                       alt="The Scripts window with a script open and a console showing its output.">
                 </picture>
               </figure>
             </div>
@@ -323,7 +323,7 @@
       <div class="wrap">
         <p class="eyebrow">A closer look</p>
         <h2>Native, fast and at home on your Mac.</h2>
-        <p class="sub">Written in SwiftUI on top of SwiftNIO. Dark and light mode, universal for Apple silicon and Intel, and no Electron.</p>
+        <p class="sub">Built in Swift, so it starts fast and stays light. Dark and light mode, Apple silicon and Intel, and no Electron.</p>
         <div class="gallery" role="list">
           <figure class="shot" role="listitem">
             <img src="images/filters-dark.webp" width="1440" height="860" loading="lazy" alt="The timeline filtered to errors in dark mode.">
@@ -355,7 +355,7 @@
               <li>HTTP, HTTPS, WebSocket and MQTT capture</li>
               <li>MQTT packet list, topic tree and payload charts</li>
               <li>Search, filters and request timing</li>
-              <li>HAR and MQTT JSON Lines export</li>
+              <li>Export captures to share</li>
               <li>One saved session next to live capture</li>
             </ul>
             <a class="btn btn-ghost btn-block" data-download data-launch-label="Download" href="#waitlist">Get notified</a>
@@ -386,7 +386,7 @@
         <h2>Questions</h2>
         <details>
           <summary>Does my traffic leave my Mac?</summary>
-          <p>No. Captures are stored locally in a SQLite database on your Mac, and scripts run on your Mac too. The only network calls the app makes on its own are checking your Pro license with the store and checking for updates.</p>
+          <p>No. Everything you capture stays on your Mac, and scripts run there too. Wiretide only goes online to check your Pro license and look for updates.</p>
         </details>
         <details>
           <summary>What's free and what needs Pro?</summary>
@@ -398,7 +398,7 @@
         </details>
         <details>
           <summary>How do I capture MQTT?</summary>
-          <p>Add your broker in Settings. Wiretide listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy, and rules and scripts apply there too.</p>
+          <p>Add your broker in Settings and point your app at the address Wiretide gives you. Wiretide passes everything through to your broker and shows it as it goes. MQTT over WebSocket is picked up automatically.</p>
         </details>
         <details>
           <summary>Does it work with the iOS Simulator and real devices?</summary>
