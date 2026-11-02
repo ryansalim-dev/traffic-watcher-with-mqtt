@@ -2,6 +2,7 @@
 import AppCore
 import AppKit
 import CaptureStore
+import ImageIO
 import Licensing
 import ProxyCore
 import SwiftUI
@@ -82,8 +83,11 @@ enum Screenshots {
         model.selection = row { $0.badge == "CONNECT" }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
 
+        for event in SampleTraffic.temperatureReadings() { model.ingest(event) }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
                         size: size, dark: false, name: "05-mqtt-topic-tree", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
+                        size: size, dark: true, name: "05b-mqtt-topics-dark", into: directory)
 
         model.section = .webSocket
         model.selection = row { $0.kind == .webSocket && $0.size > 50 }
@@ -178,10 +182,13 @@ enum Screenshots {
         let second = Task { await handler.editResponse(response, for: login) }
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
-        try await shoot(BreakpointEditor(center: center, item: center.paused[0]), size: NSSize(width: 780, height: 640),
-                        dark: false, name: "14-breakpoint-request", into: directory)
-        try await shoot(BreakpointEditor(center: center, item: center.paused[1]), size: NSSize(width: 780, height: 640),
-                        dark: true, name: "15-breakpoint-response-dark", into: directory)
+        let stageSize = NSSize(width: 1360, height: 740)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
+            BreakpointEditor(center: center, item: center.paused[0])
+        }, size: stageSize, dark: false, name: "14-breakpoint-request", into: directory, dimToolbar: true)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
+            BreakpointEditor(center: center, item: center.paused[1])
+        }, size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory, dimToolbar: true)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
                         size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
         center.resumeAll()
@@ -197,25 +204,42 @@ enum Screenshots {
             model.selection = publish.id
             model.prepareReplay(of: publish)
         }
+        // As in the mockup: an MQTT 5 broker with two properties, and Format pressed on the payload.
+        model.composer.target.version = .v5
+        model.composer.contentType = "application/json"
+        model.composer.userProperties = [.init(key: "source", value: "wiretide")]
+        model.composer.formatPayload()
+        model.composer.qos = .atLeastOnce
+        model.composer.retain = true
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
-        let composerSize = NSSize(width: 600, height: 760)
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
+        let stage = NSSize(width: 1360, height: 740)
+        func composerStage() -> some View {
+            SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 520) {
+                MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
+            }
+        }
+        try await shoot(composerStage(), size: stage, dark: false, name: "18-mqtt-replay", into: directory, dimToolbar: true)
+        try await shoot(composerStage(), size: stage, dark: true, name: "19-mqtt-replay-dark", into: directory, dimToolbar: true)
 
         model.apply(freeLicense.entitlement)
         model.preparePublish(toTopic: "home/kitchen/light/set")
         model.composer.payloadText = #"{"on": true, "brightness": 80}"#
         model.composer.repeatCount = 1
-        try await shoot(MQTTComposerView(composer: model.composer), size: composerSize, dark: false, name: "20-mqtt-publish-free", into: directory)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false), height: 560) {
+            MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
+        }, size: stage, dark: false, name: "20-mqtt-publish-free", into: directory, dimToolbar: true)
     }
 
-    private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL) async throws {
+    private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL,
+                                       dimToolbar: Bool = false) async throws {
         let window = UnconstrainedWindow(contentRect: NSRect(origin: NSPoint(x: 40, y: 40), size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = name.contains("settings") ? "Settings" : "Wiretide"
+        // Matches the app's main window, which hides its title (`.unified(showsTitle: false)`).
+        if !name.contains("settings") { window.titleVisibility = .hidden }
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let hosting = NSHostingView(rootView: view)
         hosting.sceneBridgingOptions = [.toolbars, .title]
@@ -228,6 +252,11 @@ enum Screenshots {
         let url = directory.appendingPathComponent("\(name).png")
         if !screencapture(window: window, to: url) {
             try renderOffscreen(window: window, to: url)
+        }
+        if dimToolbar {
+            // A sheet dims the whole window behind it, toolbar included.
+            try dimTop(points: window.frame.height - window.contentLayoutRect.height, ofWindowHeight: window.frame.height,
+                       opacity: 0.42, in: url)
         }
         print("Wrote \(url.path)")
         window.close()
@@ -247,6 +276,30 @@ enum Screenshots {
         return true
     }
 
+    /// Darkens the top strip of a window capture (the toolbar), leaving the transparent corners alone.
+    private static func dimTop(points: CGFloat, ofWindowHeight windowHeight: CGFloat, opacity: CGFloat, in url: URL) throws {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let full = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.draw(image, in: full)
+        // The image may include a frame margin; scale from the window's height to the image's.
+        let strip = (points / windowHeight * CGFloat(image.height)).rounded()
+        context.setBlendMode(.sourceAtop)
+        context.setFillColor(CGColor(gray: 0, alpha: opacity))
+        context.fill(CGRect(x: 0, y: CGFloat(image.height) - strip, width: CGFloat(image.width), height: strip))
+        guard let dimmed = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        CGImageDestinationAddImage(destination, dimmed, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+    }
+
     /// Fallback when screen recording isn't permitted: asks AppKit to draw the window's frame view.
     private static func renderOffscreen(window: NSWindow, to url: URL) throws {
         guard let frameView = window.contentView?.superview,
@@ -258,6 +311,30 @@ enum Screenshots {
         try png.write(to: url)
     }
 }
+/// A sheet drawn over the dimmed main window, the way the mockups show sheets. A real sheet is its own window,
+/// which a window capture leaves out, so screenshots compose the two instead.
+private struct SheetStage<Background: View, Sheet: View>: View {
+    static var dimming: Double { 0.42 }
+    let background: Background
+    var width: CGFloat = 760
+    let height: CGFloat
+    @ViewBuilder var sheet: Sheet
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            background
+                .allowsHitTesting(false)
+            // Below the toolbar only: the toolbar is drawn by the window, so `shoot` dims it in the PNG instead.
+            Color.black.opacity(SheetStage.dimming).ignoresSafeArea(edges: [.horizontal, .bottom])
+            sheet
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
+        }
+    }
+}
+
 /// The CI runner's screen is small; let windows extend past it so shots are taken at full size.
 private final class UnconstrainedWindow: NSWindow {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }

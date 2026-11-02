@@ -84,6 +84,7 @@ final class TLSInterceptionTests: XCTestCase {
         XCTAssertEqual(exchange.statusCode, 201)
         XCTAssertEqual(exchange.requestBody, Array("secret".utf8))
         XCTAssertNil(exchange.error)
+        XCTAssertNotNil(exchange.timing?.tls, "the upstream TLS handshake is timed")
 
         try? await client.channel.close()
         try await proxy.stop()

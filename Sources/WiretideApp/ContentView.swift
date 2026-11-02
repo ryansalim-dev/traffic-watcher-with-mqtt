@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppCore
 import AppKit
+import Licensing
 import MQTTCore
 import ProxyCore
 import SwiftUI
@@ -12,6 +13,9 @@ struct ContentView: View {
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
     @State var showInspector = true
+    @State var columnVisibility = NavigationSplitViewVisibility.all
+    /// Off only in screenshots that draw a sheet over the window themselves.
+    var presentsSheets = true
     @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
 
     enum MQTTMode: String, CaseIterable, Identifiable {
@@ -23,13 +27,15 @@ struct ContentView: View {
     private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(model: model, license: license)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 228)
+                // The mockup puts the sidebar button in the content toolbar, next to the recording capsule.
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
                 if showsTopics {
-                    TopicTreeView(tree: model.topicTree, selection: $selectedTopic)
+                    TopicTreeView(tree: model.topicTree, filter: model.searchText, selection: $selectedTopic)
                 } else if showsSetup {
                     SetupView(model: model)
                 } else {
@@ -38,63 +44,85 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 460)
-            .searchable(text: $model.searchText, placement: .toolbar, prompt: "Filter URLs, headers, topics, payloads")
+            .background(Theme.canvas)
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation {
+                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                        }
+                    } label: {
+                        Label("Sidebar", systemImage: "sidebar.leading")
+                    }
+                    .help("Show or hide the sidebar (⌃⌘S)")
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                }
+                ToolbarItem(placement: .navigation) {
+                    RecordingCapsule(model: model)
+                }
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
-                        Picker("View", selection: $mqttMode) {
-                            ForEach(MQTTMode.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        PillSegments(options: MQTTMode.allCases.map { ($0, $0.rawValue) }, selection: $mqttMode)
+                            .frame(width: 170)
                     }
                 }
-            }
-            .inspector(isPresented: showsSetup ? .constant(false) : $showInspector) {
-                Group {
-                    if showsTopics {
-                        TopicDetailView(tree: model.topicTree, topic: selectedTopic) { topic in
-                            model.preparePublish(toTopic: topic)
-                            model.composer.isPresented = true
-                        }
-                    } else {
-                        InspectorView(model: model)
-                    }
+                ToolbarItem(placement: .primaryAction) {
+                    ToolbarSearchField(text: $model.searchText,
+                                       prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads")
                 }
-                .inspectorColumnWidth(min: 320, ideal: 420, max: 800)
-                .toolbar {
-                    ToolbarItem {
-                        Button {
-                            showInspector.toggle()
-                        } label: {
-                            Label("Inspector", systemImage: "sidebar.trailing")
-                        }
-                        .help("Show or hide the inspector (⌥⌘I)")
-                        .keyboardShortcut("i", modifiers: [.command, .option])
+                ToolbarItem(placement: .primaryAction) {
+                    BreakpointsToggle(center: model.breakpoints)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.composer.isPresented = true
+                    } label: {
+                        Label("Publish", systemImage: "paperplane")
+                    }
+                    .help("Publish an MQTT message (⇧⌘P)")
+                }
+                // While the inspector is closed its toolbar part is gone, so the button to reopen it lives here.
+                if !showInspector && !showsSetup {
+                    ToolbarItem(placement: .primaryAction) {
+                        InspectorToggle(isOn: $showInspector)
                     }
                 }
             }
         }
+        // On the split view rather than the detail column, the inspector is a full-height column with its own
+        // part of the toolbar, as in the mockup.
+        .inspector(isPresented: showsSetup ? .constant(false) : $showInspector) {
+            Group {
+                if showsTopics {
+                    TopicDetailView(model: model, topic: selectedTopic) { topic in
+                        model.preparePublish(toTopic: topic)
+                        model.composer.isPresented = true
+                    } onReplayLast: { topic in
+                        if model.prepareReplayOfLatest(onTopic: topic) { model.composer.isPresented = true }
+                    }
+                } else {
+                    InspectorView(model: model)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Theme.panel.ignoresSafeArea())
+            .inspectorColumnWidth(min: 380, ideal: 420, max: 800)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorCopyButton(model: model, topic: showsTopics ? selectedTopic : nil)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorToggle(isOn: $showInspector)
+                }
+            }
+        }
+        .toolbarBackground(Theme.bar, for: .windowToolbar)
         .tint(Theme.accent)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                RecordingCapsule(model: model)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                BreakpointsToggle(center: model.breakpoints)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.composer.isPresented = true
-                } label: {
-                    Label("Publish", systemImage: "paperplane")
-                }
-                .help("Publish an MQTT message (⇧⌘P)")
-            }
+        .sheet(isPresented: Binding(get: { presentsSheets && model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
+            MQTTComposerView(composer: model.composer,
+                             suggestions: model.topicSuggestions(excluding: model.composer.topic)) { model.composer.isPresented = false }
         }
-        .sheet(isPresented: Binding(get: { model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
-            MQTTComposerView(composer: model.composer) { model.composer.isPresented = false }
-        }
-        .sheet(item: Binding(get: { model.breakpoints.paused.first }, set: { _ in })) { item in
+        .sheet(item: Binding(get: { presentsSheets ? model.breakpoints.paused.first : nil }, set: { _ in })) { item in
             BreakpointEditor(center: model.breakpoints, item: item)
                 .id(item.id)
         }
@@ -157,7 +185,7 @@ struct RecordingCapsule: View {
                                 .foregroundStyle(.secondary)
                             Sparkline(values: model.activity(now: context.date))
                                 .frame(width: 56, height: 16)
-                            Text("\(model.rows.count.formatted()) events")
+                            Text(countLabel)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
@@ -168,6 +196,7 @@ struct RecordingCapsule: View {
             }
             .font(.system(size: 12.5))
             .lineLimit(1)
+            .fixedSize()
             .padding(.leading, 4)
             .padding(.trailing, 12)
             .frame(height: 28)
@@ -178,6 +207,13 @@ struct RecordingCapsule: View {
         .fixedSize()
         .help(model.isCapturing ? "Stop recording (⌘R)" : "Start the proxy and MQTT forwarders (⌘R)")
         .accessibilityLabel(model.isCapturing ? "Stop recording" : "Start recording")
+    }
+
+    private var countLabel: String {
+        if model.section == .mqtt {
+            return "\(model.count(in: .mqtt).formatted()) packets"
+        }
+        return "\(model.rows.count.formatted()) events"
     }
 
     static func elapsed(from start: Date, to now: Date) -> String {
@@ -217,6 +253,13 @@ struct FilterBar: View {
                 .buttonStyle(.plain)
                 .help("Show every host again")
             }
+            if let method = model.methodFilter {
+                ActiveFilterChip(title: "Method \(method)") { model.methodFilter = nil }
+            }
+            if let statusClass = model.statusClassFilter {
+                ActiveFilterChip(title: "Status \(statusClass)xx") { model.statusClassFilter = nil }
+            }
+            AddFilterMenu(model: model)
             Spacer(minLength: 8)
             Text(model.visibleRows.count == model.rows.count
                  ? "\(model.rows.count.formatted()) events"
@@ -228,7 +271,7 @@ struct FilterBar: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .background(.bar)
+        .background(Theme.canvas)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
@@ -239,6 +282,164 @@ struct FilterBar: View {
         case .media: Theme.put
         case .errors: Theme.failure
         case .publish: Theme.mqtt
+        }
+    }
+}
+
+/// A filter added from "+ Filter", with an x to remove it.
+struct ActiveFilterChip: View {
+    let title: String
+    let remove: () -> Void
+
+    var body: some View {
+        Button(action: remove) {
+            HStack(spacing: 5) {
+                Text(title)
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(Theme.accent.opacity(0.14), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Remove this filter")
+    }
+}
+
+/// "+ Filter": narrow the list by method, status class or host.
+struct AddFilterMenu: View {
+    @Bindable var model: CaptureViewModel
+    private static let methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+    var body: some View {
+        Menu {
+            Menu("Method") {
+                ForEach(Self.methods, id: \.self) { method in
+                    Button(method) { model.methodFilter = method }
+                }
+            }
+            Menu("Status") {
+                ForEach(2...5, id: \.self) { statusClass in
+                    Button("\(statusClass)xx") { model.statusClassFilter = statusClass }
+                }
+            }
+            let hosts = model.topHosts(limit: 12)
+            if !hosts.isEmpty {
+                Menu("Host") {
+                    ForEach(hosts) { entry in
+                        Button(entry.host) { model.hostFilter = entry.host }
+                    }
+                }
+            }
+        } label: {
+            Text("+ Filter")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(.horizontal, 6)
+        .help("Filter by method, status or host")
+    }
+}
+
+/// Always-visible filter field for the toolbar, like the mockup's, focused with ⌘F.
+struct ToolbarSearchField: View {
+    @Binding var text: String
+    let prompt: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.tertiary)
+            TextField("Filter", text: $text, prompt: Text(prompt))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12.5))
+                .focused($focused)
+                .onSubmit { focused = true }
+                .onExitCommand { text = ""; focused = false }
+            if text.isEmpty {
+                Text("⌘F")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 5)
+                    .frame(height: 17)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.hairline))
+            } else {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the filter")
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(width: 220, height: 28)
+        .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(focused ? Theme.accent.opacity(0.8) : .clear, lineWidth: 1)
+        }
+        .background {
+            Button("Find") { focused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
+    }
+}
+
+/// Shows or hides the inspector; drawn in the accent color while the inspector is open, like the mockup.
+struct InspectorToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            withAnimation { isOn.toggle() }
+        } label: {
+            Label("Inspector", systemImage: "sidebar.trailing")
+                .foregroundStyle(isOn ? Theme.accent : .secondary)
+        }
+        .help(isOn ? "Hide the inspector (⌥⌘I)" : "Show the inspector (⌥⌘I)")
+        .keyboardShortcut("i", modifiers: [.command, .option])
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
+/// Copies the selected request as cURL, or the selected topic, from the inspector's toolbar.
+struct InspectorCopyButton: View {
+    let model: CaptureViewModel
+    let topic: String?
+
+    var body: some View {
+        Button {
+            if let text = textToCopy { copyToPasteboard(text) }
+        } label: {
+            Label(help, systemImage: "doc.on.doc")
+        }
+        .disabled(textToCopy == nil)
+        .help(help)
+    }
+
+    private var help: String {
+        if topic != nil { return "Copy Topic" }
+        if case .httpExchange? = model.selectedRow?.event { return "Copy as cURL" }
+        return "Copy Summary"
+    }
+
+    private var textToCopy: String? {
+        if let topic { return topic }
+        guard let row = model.selectedRow else { return nil }
+        switch row.event {
+        case .httpExchange(let exchange): return exchange.curlCommand
+        case .webSocketMessage(let message): return String(bytes: message.payload, encoding: .utf8) ?? row.summary
+        default: return row.summary
         }
     }
 }
@@ -275,29 +476,32 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: Binding(get: { model.section }, set: { model.section = $0 ?? .all })) {
-            Section("Capture") {
+            Section {
                 ForEach(TrafficSection.allCases) { section in
-                    Label {
-                        Text(section.title)
-                    } icon: {
-                        Image(systemName: section.symbol).foregroundStyle(color(for: section))
+                    HStack(spacing: 0) {
+                        Label {
+                            Text(section.title)
+                        } icon: {
+                            Image(systemName: section.symbol).foregroundStyle(color(for: section))
+                        }
+                        Spacer(minLength: 6)
+                        count(for: section)
                     }
-                    .badge(badge(for: section))
                     .tag(section)
                 }
-            }
+            } header: { SidebarHeader("Capture") }
             let hosts = model.topHosts()
             if !hosts.isEmpty {
-                Section("Hosts") {
+                Section {
                     ForEach(hosts) { entry in
                         HostRow(entry: entry, isOn: model.hostFilter == entry.host) {
                             model.hostFilter = model.hostFilter == entry.host ? nil : entry.host
                         }
                     }
-                }
+                } header: { SidebarHeader("Hosts") }
             }
             if !model.configuration.forwarders.isEmpty {
-                Section("Brokers") {
+                Section {
                     ForEach(model.configuration.forwarders) { forwarder in
                         HStack(spacing: 9) {
                             StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
@@ -308,7 +512,7 @@ struct SidebarView: View {
                                         Text("TLS").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
                                     }
                                 }
-                                Text(":\(String(forwarder.listenPort)) → :\(String(forwarder.brokerPort))\(model.isCapturing ? "" : " · idle")")
+                                Text(":\(String(forwarder.listenPort)) → :\(String(forwarder.brokerPort)) · \(brokerStatus(forwarder))")
                                     .font(.system(size: 11))
                                     .monospacedDigit()
                                     .foregroundStyle(.tertiary)
@@ -317,10 +521,10 @@ struct SidebarView: View {
                         .padding(.vertical, 2)
                         .help("Connect your app to localhost:\(String(forwarder.listenPort)) to capture \(forwarder.label)")
                     }
-                }
+                } header: { SidebarHeader("Brokers") }
             }
             if !model.pinnedHosts.isEmpty {
-                Section("Rejected Certificates") {
+                Section {
                     ForEach(model.pinnedHosts, id: \.self) { host in
                         HStack {
                             Label {
@@ -335,13 +539,21 @@ struct SidebarView: View {
                                 .help("Stop decrypting \(host); its traffic is relayed untouched")
                         }
                     }
-                }
+                } header: { SidebarHeader("Rejected Certificates") }
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Theme.sidebar.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(model: model, license: license)
         }
+    }
+
+    private func brokerStatus(_ forwarder: ForwarderConfiguration) -> String {
+        guard model.isCapturing else { return "idle" }
+        let rate = model.messagesPerSecond(broker: "\(forwarder.brokerHost):\(forwarder.brokerPort)")
+        return rate < 0.1 && rate > 0 ? "<1 msg/s" : "\(Int(rate.rounded())) msg/s"
     }
 
     private func color(for section: TrafficSection) -> Color {
@@ -353,11 +565,27 @@ struct SidebarView: View {
         }
     }
 
-    private func badge(for section: TrafficSection) -> Text? {
+    /// Plain counts, as in the mockup; Issues turns red when there are any.
+    private func count(for section: TrafficSection) -> some View {
         let count = model.count(in: section)
-        guard count > 0 else { return nil }
-        let text = Text(count.formatted()).monospacedDigit()
-        return section == .issues ? text.foregroundStyle(Theme.failure).fontWeight(.semibold) : text
+        let isAlert = section == .issues && count > 0
+        return Text(count.formatted())
+            .font(.system(size: 11.5, weight: isAlert ? .semibold : .regular))
+            .monospacedDigit()
+            .foregroundStyle(isAlert ? AnyShapeStyle(Theme.failure) : AnyShapeStyle(.tertiary))
+    }
+}
+
+/// Uppercase, tracked section titles, as in the mockup's sidebar.
+struct SidebarHeader: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 10.5, weight: .semibold))
+            .kerning(0.7)
+            .foregroundStyle(.tertiary)
     }
 }
 
@@ -444,7 +672,7 @@ struct SidebarFooter: View {
             SettingsLink {
                 HStack(spacing: 8) {
                     LicenseChip(isPro: license.entitlement.isPro)
-                    Text(license.entitlement.isPro ? "Wiretide Pro" : "Free plan · Upgrade")
+                    Text(licenseLine)
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                 }
@@ -454,6 +682,13 @@ struct SidebarFooter: View {
         }
         .padding(12)
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    }
+
+    private var licenseLine: String {
+        if case .pro(let coveredUntil) = license.entitlement {
+            return "Updates until \(coveredUntil.formatted(.dateTime.month(.abbreviated).year()))"
+        }
+        return "Free plan · Upgrade"
     }
 
     private var title: String {
@@ -469,7 +704,7 @@ struct SidebarFooter: View {
         let port = String(model.proxyPort ?? model.configuration.proxyPort)
         let host = model.configuration.allowRemoteDevices ? "All interfaces" : "127.0.0.1"
         let https = model.configuration.decryptHTTPS ? "HTTPS decrypted" : "HTTPS relayed"
-        return "\(host):\(port)\n\(https)"
+        return "\(host):\(port) · \(https)"
     }
 }
 
@@ -497,6 +732,8 @@ struct LicenseChip: View {
 struct TrafficTimeline: View {
     @Bindable var model: CaptureViewModel
     let density: RowDensity
+    /// Code and Duration only mean something for HTTP, so they are hidden in the MQTT section.
+    @State private var columns = TableColumnCustomization<TrafficRow>()
 
     var body: some View {
         let rows = model.visibleRows
@@ -514,40 +751,46 @@ struct TrafficTimeline: View {
             }
         } else {
             let longest = rows.lazy.compactMap(\.duration).max() ?? 1
-            Table(rows, selection: $model.selection) {
+            Table(rows, selection: $model.selection, columnCustomization: $columns) {
                 TableColumn("") { row in
                     StatusDot(color: Theme.color(for: row.tone))
                         .frame(maxWidth: .infinity)
                         .frame(height: density.contentHeight)
                 }
                 .width(12)
+                .customizationID("status")
                 TableColumn("Type") { row in
                     TypePill(text: row.pill, color: Theme.color(forPill: row.pill, kind: row.kind))
                 }
                 .width(64)
+                .customizationID("type")
                 TableColumn("Host / Path") { row in
                     HostPathCell(row: row)
                 }
-                .width(min: 200, ideal: 360)
+                .width(min: 180, ideal: 250)
+                .customizationID("hostPath")
                 TableColumn("Code") { row in
                     Text(row.statusCode.map(String.init) ?? "")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.color(forStatus: row.statusCode))
                 }
                 .width(40)
+                .customizationID("code")
                 TableColumn("Duration") { row in
                     if let duration = row.duration {
                         DurationCell(duration: duration, longest: longest)
                     }
                 }
                 .width(120)
+                .customizationID("duration")
                 TableColumn("Size") { row in
-                    Text(row.size > 0 ? Formatting.byteCount(row.size) : "—")
+                    Text(row.size > 0 ? Formatting.compactByteCount(row.size) : "—")
                         .monospacedDigit()
                         .foregroundStyle(row.size > 0 ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.quaternary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .width(72)
+                .customizationID("size")
                 TableColumn("Time") { row in
                     Text(row.time, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
                         .secondFraction(.fractional(3)))
@@ -556,8 +799,16 @@ struct TrafficTimeline: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .width(100)
+                .customizationID("time")
             }
-            .tableStyle(.inset(alternatesRowBackgrounds: true))
+            .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .scrollContentBackground(.hidden)
+            .background(Theme.canvas)
+            .onChange(of: model.section, initial: true) {
+                let visibility: Visibility = model.section == .mqtt ? .hidden : .automatic
+                columns[visibility: "code"] = visibility
+                columns[visibility: "duration"] = visibility
+            }
             .contextMenu(forSelectionType: TrafficRow.ID.self) { ids in
                 if let id = ids.first, let row = model.rows.first(where: { $0.id == id }) {
                     TimelineRowMenu(model: model, row: row)
@@ -788,119 +1039,6 @@ enum BreakpointLabel {
         let path = withoutScheme.firstIndex(of: "/").map { String(withoutScheme[$0...]) } ?? "/"
         let trimmed = path.split(separator: "?").first.map(String.init) ?? path
         return trimmed.count > 40 ? "…" + trimmed.suffix(39) : trimmed
-    }
-}
-
-/// The MQTT topics seen so far as an outline, expanded by default.
-struct TopicTreeView: View {
-    let tree: TopicTree
-    @Binding var selection: TopicNode.ID?
-    @State private var collapsed: Set<TopicNode.ID> = []
-
-    var body: some View {
-        if tree.roots.isEmpty {
-            ContentUnavailableView("No topics yet", systemImage: "point.3.connected.trianglepath.dotted",
-                                   description: Text("Topics appear here as PUBLISH packets are captured."))
-        } else {
-            List(selection: $selection) {
-                ForEach(tree.roots) { TopicBranch(node: $0, collapsed: $collapsed) }
-            }
-        }
-    }
-}
-
-struct TopicBranch: View {
-    let node: TopicNode
-    @Binding var collapsed: Set<TopicNode.ID>
-
-    var body: some View {
-        if node.children.isEmpty {
-            TopicLabel(node: node).tag(node.id)
-        } else {
-            DisclosureGroup(isExpanded: Binding(
-                get: { !collapsed.contains(node.id) },
-                set: { expanded in
-                    if expanded { collapsed.remove(node.id) } else { collapsed.insert(node.id) }
-                }
-            )) {
-                ForEach(node.children) { TopicBranch(node: $0, collapsed: $collapsed) }
-            } label: {
-                TopicLabel(node: node)
-            }
-            .tag(node.id)
-        }
-    }
-}
-
-struct TopicLabel: View {
-    let node: TopicNode
-
-    var body: some View {
-        HStack {
-            Text(node.name)
-            if node.retained {
-                Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).help("Retained")
-            }
-            Spacer()
-            if let payload = node.lastPayload, let text = String(bytes: payload.prefix(40), encoding: .utf8) {
-                Text(text).lineLimit(1).foregroundStyle(.secondary).font(.callout.monospaced())
-            }
-            Text("\(node.totalCount)")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 24, alignment: .trailing)
-        }
-    }
-}
-
-/// Inspector for the selected topic: counts, retained flag and the latest payload.
-struct TopicDetailView: View {
-    let tree: TopicTree
-    let topic: TopicNode.ID?
-    var onPublish: ((String) -> Void)?
-
-    var body: some View {
-        if let topic, let node = tree.node(for: topic) {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(node.id).font(.headline.monospaced()).textSelection(.enabled)
-                        Spacer()
-                        if let onPublish {
-                            Button {
-                                onPublish(node.id)
-                            } label: {
-                                Label("Publish…", systemImage: "paperplane")
-                            }
-                            .help("Send a message to this topic (Pro)")
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        Text("\(node.messageCount) messages here, \(node.totalCount) including subtopics")
-                        if node.retained { Label("Retained", systemImage: "pin.fill") }
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    if let updated = node.lastUpdated {
-                        Text("Last message \(updated.formatted(date: .omitted, time: .standard))")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(12)
-                Divider()
-                if let payload = node.lastPayload {
-                    BodyView(bytes: payload, contentType: nil)
-                } else {
-                    Text("Nothing has been published to this exact topic yet.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        } else {
-            ContentUnavailableView("No topic selected", systemImage: "point.3.connected.trianglepath.dotted",
-                                   description: Text("Select a topic to see its latest payload."))
-        }
     }
 }
 #endif

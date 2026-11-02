@@ -11,7 +11,22 @@ struct BreakpointsToggle: View {
         Button {
             center.isEnabled.toggle()
         } label: {
-            Label("Breakpoints", systemImage: symbol)
+            Label {
+                Text("Breakpoints")
+            } icon: {
+                Image(systemName: symbol)
+                    .overlay(alignment: .topTrailing) {
+                        if !center.paused.isEmpty {
+                            Text(center.paused.count.formatted())
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color(red: 0.1, green: 0.07, blue: 0))
+                                .padding(.horizontal, 3)
+                                .frame(minWidth: 14, minHeight: 14)
+                                .background(Theme.put, in: Capsule())
+                                .offset(x: 8, y: -7)
+                        }
+                    }
+            }
         }
         .foregroundStyle(center.isActive ? Theme.warning : Color.secondary)
         .help(help)
@@ -46,106 +61,167 @@ struct BreakpointEditor: View {
 
     private var isRequest: Bool { item.stage == .request }
 
+    @State private var bodyFormat: BodyFormat = .text
+
+    enum BodyFormat: String, CaseIterable, Identifiable {
+        case json = "JSON", text = "Text"
+        var id: String { rawValue }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                if isRequest {
-                    HStack(spacing: 8) {
-                        TextField("Method", text: $method)
-                            .frame(width: 90)
-                        TextField("URL", text: $url)
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if isRequest {
+                        FieldGroup(label: "Method") {
+                            BoxedTextField(title: "Method", text: $method, monospaced: true)
+                        }
+                        FieldGroup(label: "URL") {
+                            TextField("URL", text: $url, axis: .vertical)
+                                .labelsHidden()
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12.5, design: .monospaced))
+                                .lineLimit(1...4)
+                                .padding(.vertical, 6)
+                                .boxed()
+                        }
+                    } else {
+                        FieldGroup(label: "Status") {
+                            HStack(spacing: 8) {
+                                TextField("Status", value: $status, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12.5, design: .monospaced))
+                                    .frame(width: 44)
+                                    .boxed()
+                                Text(Self.reasonPhrase(status))
+                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .foregroundStyle(Theme.color(forStatus: status))
+                            }
+                        }
                     }
-                    .font(.body.monospaced())
-                    .textFieldStyle(.roundedBorder)
-                } else {
-                    HStack(spacing: 8) {
-                        Text("Status").foregroundStyle(.secondary)
-                        TextField("Status", value: $status, format: .number.grouping(.never))
-                            .frame(width: 70)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.body.monospaced())
-                        Text(Self.reasonPhrase(status))
-                            .foregroundStyle(.secondary)
+                    FieldGroup(label: "Headers · one per line") {
+                        CodeEditor(text: $headersText, fontSize: 12)
+                            .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .frame(width: 300)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 10) {
+                        if binaryBody == nil {
+                            PillSegments(options: BodyFormat.allCases.map { ($0, $0.rawValue) }, selection: $bodyFormat)
+                                .frame(width: 130)
+                        } else {
+                            CapsLabel("Body")
+                        }
                         Spacer()
+                        Text(bodySummary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                        if binaryBody == nil {
+                            Button("Format") {
+                                if let pretty = Formatting.prettyJSON(Array(bodyText.utf8)) { bodyText = pretty }
+                            }
+                            .buttonStyle(ChipButtonStyle())
+                            .disabled(Formatting.prettyJSON(Array(bodyText.utf8)) == nil)
+                            .help("Pretty-print the JSON")
+                        }
                     }
-                }
-                Text("Headers").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                TextEditor(text: $headersText)
-                    .font(.callout.monospaced())
-                    .frame(minHeight: 110, idealHeight: 150)
-                    .border(Color(nsColor: .separatorColor))
-                HStack {
-                    Text("Body").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(Formatting.byteCount(currentBody.count)).font(.caption).foregroundStyle(.tertiary)
-                }
-                if let binaryBody {
-                    Text("Binary body (\(Formatting.byteCount(binaryBody.count))). It is passed on unchanged.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 120)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .border(Color(nsColor: .separatorColor))
-                } else {
-                    TextEditor(text: $bodyText)
-                        .font(.callout.monospaced())
-                        .frame(minHeight: 160)
-                        .border(Color(nsColor: .separatorColor))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+                    if let binaryBody {
+                        Text("Binary body (\(Formatting.byteCount(binaryBody.count))). It is passed on unchanged.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        CodeEditor(text: $bodyText, highlightJSON: bodyFormat == .json)
+                    }
                 }
             }
-            .padding(16)
-            Divider()
             footer
         }
-        .frame(minWidth: 720, idealWidth: 760, minHeight: 560, idealHeight: 620)
+        .frame(minWidth: 740, idealWidth: 760, minHeight: 520, idealHeight: 560)
+        .background(Theme.panel)
+        .tint(Theme.accent)
         .onAppear(perform: load)
         .interactiveDismissDisabled()
     }
 
+    private var bodySummary: String {
+        let body = currentBody
+        guard !body.isEmpty else { return "Empty" }
+        let size = "\(body.count.formatted()) byte\(body.count == 1 ? "" : "s")"
+        if binaryBody == nil, Formatting.prettyJSON(body) != nil { return "\(size) · valid JSON" }
+        return size
+    }
+
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "pause.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isRequest ? "Request paused before it was sent" : "Response paused before the app sees it")
-                    .font(.headline)
-                Text(item.title)
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("Paused \(item.pausedAt.formatted(date: .omitted, time: .standard)). It continues unchanged after \(minutes) if left alone.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+        HStack(spacing: 12) {
+            Text(isRequest ? "Request paused" : "Response paused")
+                .font(.system(size: 14, weight: .semibold))
+            Text(isRequest ? "before it was sent" : "before the app sees it")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             Spacer()
-            let waiting = center.paused.count - 1
-            if waiting > 0 {
-                Text("\(waiting) more waiting")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.orange)
+            HStack(spacing: 7) {
+                StatusDot(color: Theme.warning, halo: true)
+                Text(center.paused.count > 1 ? "\(center.paused.count - 1) more waiting" : "Breakpoint")
+                    .font(.system(size: 12))
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Theme.fill, in: Capsule())
         }
-        .padding(16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
     private var footer: some View {
-        HStack {
-            Button("Abort", role: .destructive) { center.abort(item.id) }
-                .help(isRequest ? "Don't send it; the app gets a 502 error" : "Drop the response; the app gets a 502 error")
+        HStack(spacing: 10) {
+            Text("Paused at \(item.pausedAt.formatted(date: .omitted, time: .standard)) · continues unchanged after \(minutes)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             Spacer()
+            Button("Abort", role: .destructive) { center.abort(item.id) }
+                .buttonStyle(ChipButtonStyle())
+                .help(isRequest ? "Don't send it; the app gets a 502 error" : "Drop the response; the app gets a 502 error")
             Button("Reset") { load() }
-            Button("Continue Unchanged") { center.resumeUnchanged(item.id) }
-            Button(isRequest ? "Send" : "Return to App") { resume() }
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ChipButtonStyle())
+                .help("Undo your edits")
+            Button("Continue") { center.resumeUnchanged(item.id) }
+                .buttonStyle(ChipButtonStyle())
+                .help("Let it through without your edits")
+            Button {
+                resume()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isRequest ? "paperplane.fill" : "arrow.uturn.left").font(.system(size: 11))
+                    Text(isRequest ? "Send edited" : "Return edited")
+                    Text("⌘↩").opacity(0.7)
+                }
+            }
+            .buttonStyle(ChipButtonStyle(prominent: true))
+            .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Theme.bar)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
     private var minutes: String {
@@ -176,6 +252,7 @@ struct BreakpointEditor: View {
         if let text = String(bytes: bytes, encoding: .utf8) {
             bodyText = text
             binaryBody = nil
+            bodyFormat = text.isEmpty || Formatting.prettyJSON(bytes) != nil ? .json : .text
         } else {
             bodyText = ""
             binaryBody = bytes
@@ -285,7 +362,7 @@ struct ProNotice: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "lock.fill").foregroundStyle(.orange)
+            Image(systemName: "lock.fill").foregroundStyle(Theme.warning)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(feature) is part of Wiretide Pro").font(.callout.weight(.semibold))
                 Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -294,7 +371,7 @@ struct ProNotice: View {
             if showsUpgrade { SettingsLink { Text("Upgrade…") } }
         }
         .padding(10)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 #endif
