@@ -26,6 +26,8 @@ let package = Package(
     targets: [
         .target(name: "MQTTCore"),
         .systemLibrary(name: "CSQLite", providers: [.apt(["libsqlite3-dev"]), .brew(["sqlite"])]),
+        // zlib, to decode gzip and deflate response bodies. Part of macOS; zlib1g-dev on Linux.
+        .systemLibrary(name: "CZlib", providers: [.apt(["zlib1g-dev"])]),
         .target(name: "CaptureStore", dependencies: ["CSQLite", "MQTTCore", "ProxyCore"]),
         // Pro license: Lemon Squeezy client, entitlement rules, keychain storage. Foundation only.
         .target(name: "Licensing"),
@@ -70,6 +72,7 @@ let package = Package(
         .target(
             name: "ProxyCore",
             dependencies: [
+                "CZlib",
                 "MQTTCore",
                 "TLSMitm",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),

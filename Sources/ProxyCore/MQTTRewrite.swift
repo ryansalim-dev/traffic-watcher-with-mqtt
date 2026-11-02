@@ -229,7 +229,9 @@ final class MQTTRelay {
 
     /// Takes bytes read from one side and returns the bytes to write to the other.
     func relay(_ bytes: [UInt8], from direction: MQTTDirection) -> [UInt8] {
-        guard !failed else { return bytes }
+        // After a decoding failure everything passes through, starting with whatever this direction
+        // still held of an incomplete packet.
+        guard !failed else { return takePending(from: direction) + bytes }
         pending[direction, default: []] += bytes
         let events: [MQTTSessionEvent]
         do {

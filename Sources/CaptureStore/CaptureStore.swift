@@ -6,6 +6,19 @@ public struct CaptureSession: Equatable, Sendable, Identifiable {
     public var name: String
     public var createdAt: Date
     public var eventCount: Int
+    /// When the newest event happened; nil for an empty session.
+    public var lastEventAt: Date?
+    /// Events per kind (`http`, `mqtt`, `websocket`, `tunnel`, `tls`).
+    public var kindCounts: [String: Int]
+
+    public init(id: UUID, name: String, createdAt: Date, eventCount: Int, lastEventAt: Date? = nil, kindCounts: [String: Int] = [:]) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.eventCount = eventCount
+        self.lastEventAt = lastEventAt
+        self.kindCounts = kindCounts
+    }
 }
 
 /// A capture event as stored, with its row id (stable ordering) and session.
@@ -49,9 +62,9 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
 
     /// Starts a new session; subsequent events are recorded into it.
     @discardableResult
-    public func startSession(named name: String) throws -> UUID {
+    public func startSession(named name: String, createdAt: Date = Date()) throws -> UUID {
         let id = UUID()
-        try insertSession(id: id, name: name)
+        try insertSession(id: id, name: name, createdAt: createdAt)
         withLock { _currentSession = id }
         return id
     }
@@ -97,21 +110,56 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
 
     // MARK: Reading
 
+    /// Every session, newest first, with its event counts.
     public func sessions() throws -> [CaptureSession] {
         try withLock {
-            try database.query("""
-                SELECT s.id, s.name, s.created_at, COUNT(e.id)
+            var kinds: [String: [String: Int]] = [:]
+            for row in try database.query("SELECT session_id, kind, COUNT(*) FROM events GROUP BY session_id, kind") {
+                guard let session = row[0].string, let kind = row[1].string else { continue }
+                kinds[session, default: [:]][kind] = Int(row[2].int ?? 0)
+            }
+            return try database.query("""
+                SELECT s.id, s.name, s.created_at, COUNT(e.id), MAX(e.timestamp)
                 FROM sessions s LEFT JOIN events e ON e.session_id = s.id
                 GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC
                 """).compactMap { row in
-                guard let id = row[0].string.flatMap(UUID.init(uuidString:)) else { return nil }
+                guard let key = row[0].string, let id = UUID(uuidString: key) else { return nil }
                 return CaptureSession(
                     id: id,
                     name: row[1].string ?? "",
                     createdAt: Date(timeIntervalSince1970: row[2].double ?? 0),
-                    eventCount: Int(row[3].int ?? 0)
+                    eventCount: Int(row[3].int ?? 0),
+                    lastEventAt: row[4].double.map(Date.init(timeIntervalSince1970:)),
+                    kindCounts: kinds[key] ?? [:]
                 )
             }
+        }
+    }
+
+    /// Every event of a session in capture order, read in pages.
+    public func allEvents(in session: UUID) throws -> [StoredCaptureEvent] {
+        var result: [StoredCaptureEvent] = []
+        let page = 2000
+        while true {
+            let batch = try events(in: session, limit: page, offset: result.count)
+            result += batch
+            if batch.count < page { return result }
+        }
+    }
+
+    /// Removes earlier sessions that never recorded anything (every launch starts one). Returns how many.
+    @discardableResult
+    public func deleteEmptySessions() throws -> Int {
+        try withLock {
+            let rows = try database.query(
+                "SELECT id FROM sessions WHERE id != ? AND NOT EXISTS (SELECT 1 FROM events WHERE session_id = sessions.id)",
+                [.text(_currentSession.uuidString)]
+            )
+            try database.query(
+                "DELETE FROM sessions WHERE id != ? AND NOT EXISTS (SELECT 1 FROM events WHERE session_id = sessions.id)",
+                [.text(_currentSession.uuidString)]
+            )
+            return rows.count
         }
     }
 
@@ -200,11 +248,11 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         )
     }
 
-    private func insertSession(id: UUID, name: String) throws {
+    private func insertSession(id: UUID, name: String, createdAt: Date = Date()) throws {
         try withLock {
             try database.query(
                 "INSERT INTO sessions (id, name, created_at) VALUES (?, ?, ?)",
-                [.text(id.uuidString), .text(name), .real(Date().timeIntervalSince1970)]
+                [.text(id.uuidString), .text(name), .real(createdAt.timeIntervalSince1970)]
             )
         }
     }

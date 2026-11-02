@@ -130,7 +130,66 @@ enum Screenshots {
         try await shootProTools(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper, into: directory)
         try await shootRules(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
         try await shootScripts(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
+        try await shootSessions(model: model, storage: storage, scratch: scratch, freeLicense: freeLicense, proLicense: proLicense,
+                                into: directory)
         await model.stopCapture()
+    }
+
+    /// The Saved Sessions window and a saved session open in the timeline, with a few earlier sessions on file.
+    private static func shootSessions(model: CaptureViewModel, storage: CertificateStorage, scratch: URL, freeLicense: LicenseManager,
+                                      proLicense: LicenseManager, into directory: URL) async throws {
+        // Earlier sessions go in through a second connection, so the model keeps recording into its own.
+        let seeder = try CaptureStore(path: scratch.appendingPathComponent("captures.sqlite").path, sessionName: "seed")
+        let hour: TimeInterval = 3_600
+        let history: [(String, TimeInterval, Int)] = [
+            ("Checkout flow, staging", -2 * hour, 2),
+            ("Thermostat firmware 4.2.1", -26 * hour, 1),
+            ("Login bug repro", -27 * hour, 3),
+            ("Kitchen sensor soak test", -4 * 24 * hour, 6),
+            ("Before the redesign", -12 * 24 * hour, 1),
+        ]
+        for (name, offset, repeats) in history {
+            let start = Date().addingTimeInterval(offset)
+            try seeder.startSession(named: name, createdAt: start)
+            for round in 0..<repeats {
+                // Events without their own time would be stamped now; leave them out of the backdated sessions.
+                for event in SampleTraffic.events(startingAt: start.addingTimeInterval(Double(round) * 240 + 5)) {
+                    switch event {
+                    case .tlsInterceptionFailed, .tunnelClosed, .mqttDecodingFailed, .webSocketDecodingFailed: continue
+                    default: seeder.record(event)
+                    }
+                }
+            }
+            if name.contains("sensor") {
+                for event in SampleTraffic.temperatureReadings(count: 120, endingAt: start.addingTimeInterval(3 * hour)) { seeder.record(event) }
+            }
+        }
+        try model.store.deleteEmptySessions()
+        try model.store.renameSession(model.store.currentSession, to: "Smart home app, Nov 2")
+        model.sessionLimit = nil
+        model.apply(proLicense.entitlement)
+        model.reloadSessions()
+        model.openSession(model.sessions.first { $0.name == "Thermostat firmware 4.2.1" }!.id)
+
+        let windowSize = NSSize(width: 900, height: 600)
+        try await shoot(SessionsWindow(model: model, license: proLicense), size: windowSize, dark: false,
+                        name: "33-sessions", into: directory, title: "Saved Sessions")
+        try await shoot(SessionsWindow(model: model, license: proLicense), size: windowSize, dark: true,
+                        name: "33b-sessions-dark", into: directory, title: "Saved Sessions")
+
+        // Free tier: the notice about the three newest sessions (nothing is pruned for the shot).
+        try await shoot(SessionsWindow(model: model, license: freeLicense), size: windowSize, dark: false,
+                        name: "34-sessions-free", into: directory, title: "Saved Sessions")
+
+        let login = model.sessions.first { $0.name == "Login bug repro" }!
+        model.openSession(login.id)
+        model.section = .all
+        model.selection = model.rows.first { $0.badge == "503" }?.id
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: NSSize(width: 1440, height: 860),
+                        dark: true, name: "35-timeline-saved-session-dark", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: NSSize(width: 1440, height: 860),
+                        dark: false, name: "35b-timeline-saved-session", into: directory)
+        model.returnToLive()
     }
 
     /// Breakpoints and MQTT publish/replay, with a Pro license (and one locked, free-tier view).

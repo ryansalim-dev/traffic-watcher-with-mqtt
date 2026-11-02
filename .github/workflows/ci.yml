@@ -19,6 +19,7 @@ jobs:
       - name: Check the bundle
         run: |
           plutil -p dist/Wiretide.app/Contents/Info.plist
+          test -s dist/Wiretide.app/Contents/Resources/AppIcon.icns
           lipo -archs dist/Wiretide.app/Contents/MacOS/Wiretide
           lipo -archs dist/Wiretide.app/Contents/MacOS/WiretideHelper
           plutil -lint dist/Wiretide.app/Contents/Library/LaunchDaemons/app.wiretide.Wiretide.Helper.plist
@@ -39,13 +40,18 @@ jobs:
           name: screenshots
           path: screenshots
           if-no-files-found: warn
+      - name: Upload the app icon
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-icon
+          path: dist/Wiretide.app/Contents/Resources/AppIcon.icns
 
   linux:
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
-      - name: Install SQLite headers
-        run: apt-get update && apt-get install -y libsqlite3-dev
+      - name: Install SQLite and zlib headers
+        run: apt-get update && apt-get install -y libsqlite3-dev zlib1g-dev
       - name: Test
         run: swift test

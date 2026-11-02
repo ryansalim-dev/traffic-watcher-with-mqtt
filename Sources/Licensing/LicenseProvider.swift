@@ -11,7 +11,8 @@ import FoundationNetworking
 /// - Returned licenses carry `provider == id`, the activation for this Mac in `instanceID`, and
 ///   `lastValidatedAt == now`.
 /// - Failing to reach the store throws `LicenseError.network`, so Pro keeps working offline.
-///   Every other error is a refusal and revokes a stored license on `validate`.
+///   `.rejected` and `.wrongProduct` are refusals and revoke a stored license on `validate`;
+///   `.unexpectedResponse` (a captive portal, a proxy's error page) keeps it, like a network error.
 /// - `activate` throws `LicenseError.wrongProduct` or `.rejected` for keys it doesn't recognise,
 ///   so the next configured provider can be tried.
 public protocol LicenseProvider: Sendable {

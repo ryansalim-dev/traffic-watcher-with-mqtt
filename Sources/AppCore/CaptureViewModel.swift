@@ -32,7 +32,7 @@ public enum TrafficSection: String, CaseIterable, Identifiable, Hashable, Sendab
         }
     }
 
-    func includes(_ row: TrafficRow) -> Bool {
+    public func includes(_ row: TrafficRow) -> Bool {
         switch self {
         case .all: true
         case .http: row.kind == .http
@@ -166,6 +166,15 @@ public final class CaptureViewModel {
     public var sessionLimit: Int? {
         didSet { applySessionLimit() }
     }
+    /// Saved sessions, newest first (the one recording now included). Refreshed by `reloadSessions()`.
+    public private(set) var sessions: [CaptureSession] = []
+    /// The saved session shown in the timeline instead of the live one; nil while showing live capture.
+    public private(set) var viewedSession: CaptureSession?
+    /// Set to open the Saved Sessions window (the view resets it).
+    public var sessionsPresented = false
+    /// The live timeline, kept aside (and still growing) while a saved session is shown.
+    private var liveRows: [TrafficRow] = []
+    private var liveTopicTree = TopicTree()
 
     public let store: CaptureStore
     /// HTTP breakpoints (Pro).
@@ -348,6 +357,7 @@ public final class CaptureViewModel {
 
     /// Starts a fresh session and clears the timeline. Earlier sessions stay in the store.
     public func newSession(named name: String = "Session") {
+        returnToLive()
         do {
             try store.startSession(named: name)
             applySessionLimit()
@@ -359,9 +369,93 @@ public final class CaptureViewModel {
             hostFilter = nil
             methodFilter = nil
             statusClassFilter = nil
+            reloadSessions()
         } catch {
             lastError = "Could not start a new session: \(error)"
         }
+    }
+
+    // MARK: Saved sessions
+
+    /// The session the timeline, search and export work on.
+    public var displayedSessionID: UUID { viewedSession?.id ?? store.currentSession }
+
+    /// True for the session that new traffic is recorded into.
+    public func isLive(_ session: CaptureSession) -> Bool { session.id == store.currentSession }
+
+    public func reloadSessions() {
+        do {
+            sessions = try store.sessions()
+            if let viewed = viewedSession { viewedSession = sessions.first { $0.id == viewed.id } }
+        } catch {
+            lastError = "Could not read saved sessions: \(error)"
+        }
+    }
+
+    /// Shows a saved session in the timeline. Live capture keeps recording in the background.
+    public func openSession(_ id: UUID) {
+        guard id != store.currentSession else { return returnToLive() }
+        do {
+            let events = try store.allEvents(in: id)
+            if viewedSession == nil {
+                liveRows = rows
+                liveTopicTree = topicTree
+            }
+            var tree = TopicTree()
+            for stored in events {
+                if case .mqtt(let m) = stored.event { tree.record(m.event, at: m.timestamp) }
+            }
+            rows = events.map(TrafficRow.init)
+            topicTree = tree
+            reloadSessions()
+            viewedSession = sessions.first { $0.id == id }
+            resetFilters()
+        } catch {
+            lastError = "Could not open the session: \(error)"
+        }
+    }
+
+    /// Goes back to the live timeline.
+    public func returnToLive() {
+        guard viewedSession != nil else { return }
+        viewedSession = nil
+        rows = liveRows
+        topicTree = liveTopicTree
+        liveRows = []
+        liveTopicTree = TopicTree()
+        resetFilters()
+    }
+
+    public func renameSession(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try store.renameSession(id, to: trimmed)
+            reloadSessions()
+        } catch {
+            lastError = "Could not rename the session: \(error)"
+        }
+    }
+
+    /// Deletes a saved session for good. The session recording now can't be deleted.
+    public func deleteSession(_ id: UUID) {
+        guard id != store.currentSession else { return }
+        if viewedSession?.id == id { returnToLive() }
+        do {
+            try store.deleteSession(id)
+            reloadSessions()
+        } catch {
+            lastError = "Could not delete the session: \(error)"
+        }
+    }
+
+    private func resetFilters() {
+        selection = nil
+        searchText = ""
+        searchResults = nil
+        hostFilter = nil
+        methodFilter = nil
+        statusClassFilter = nil
     }
 
     /// Stops decrypting `host` from now on and remembers it in the configuration.
@@ -374,7 +468,12 @@ public final class CaptureViewModel {
     private func applySessionLimit() {
         guard let sessionLimit else { return }
         do {
-            try store.pruneSessions(keepingNewest: sessionLimit)
+            if try store.pruneSessions(keepingNewest: sessionLimit) > 0 {
+                if let viewed = viewedSession, (try? store.sessions())?.contains(where: { $0.id == viewed.id }) != true {
+                    returnToLive()
+                }
+                reloadSessions()
+            }
         } catch {
             lastError = "Could not remove old sessions: \(error)"
         }
@@ -387,13 +486,19 @@ public final class CaptureViewModel {
         do {
             let stored = try store.append(event)
             let row = TrafficRow(stored)
-            rows.append(row)
-            if case .mqtt(let m) = event { topicTree.record(m.event, at: m.timestamp) }
+            if viewedSession == nil {
+                rows.append(row)
+                if case .mqtt(let m) = event { topicTree.record(m.event, at: m.timestamp) }
+            } else {
+                // A saved session is on screen; live capture carries on behind it.
+                liveRows.append(row)
+                if case .mqtt(let m) = event { liveTopicTree.record(m.event, at: m.timestamp) }
+            }
             if case .tlsInterceptionFailed(let host, _, _) = event,
                !pinnedHosts.contains(host), !configuration.bypassHosts.contains(host) {
                 pinnedHosts.append(host)
             }
-            if !searchText.isEmpty { runSearch() }
+            if !searchText.isEmpty, viewedSession == nil { runSearch() }
         } catch {
             lastError = "Could not save event: \(error)"
         }
@@ -421,9 +526,12 @@ public final class CaptureViewModel {
             .map { $0 }
     }
 
+    /// The live session's rows, even while a saved session is on screen (for the recording capsule).
+    public var liveTimeline: [TrafficRow] { viewedSession == nil ? rows : liveRows }
+
     /// Events per bucket over the last `buckets × bucketLength` seconds, for the activity sparkline.
     public func activity(buckets: Int = 24, bucketLength: TimeInterval = 5, now: Date = Date()) -> [Int] {
-        ActivityHistogram.counts(of: rows.map(\.time), buckets: buckets, bucketLength: bucketLength, endingAt: now)
+        ActivityHistogram.counts(of: liveTimeline.map(\.time), buckets: buckets, bucketLength: bucketLength, endingAt: now)
     }
 
     public var selectedRow: TrafficRow? {
@@ -442,7 +550,7 @@ public final class CaptureViewModel {
             return
         }
         do {
-            let ids = Set(try store.search(query, in: store.currentSession, limit: 5000).map(\.id))
+            let ids = Set(try store.search(query, in: displayedSessionID, limit: 5000).map(\.id))
             searchResults = rows.filter { ids.contains($0.id) }
         } catch {
             searchResults = []
@@ -451,6 +559,7 @@ public final class CaptureViewModel {
 
     // MARK: Export
 
-    public func exportHAR() throws -> Data { try store.exportHAR(session: store.currentSession) }
-    public func exportMQTT() throws -> Data { try store.exportMQTTJSONLines(session: store.currentSession) }
+    /// Exports the session on screen, or `session` when given.
+    public func exportHAR(session: UUID? = nil) throws -> Data { try store.exportHAR(session: session ?? displayedSessionID) }
+    public func exportMQTT(session: UUID? = nil) throws -> Data { try store.exportMQTTJSONLines(session: session ?? displayedSessionID) }
 }

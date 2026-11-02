@@ -240,6 +240,15 @@ final class MQTTRewriteTests: XCTestCase {
         XCTAssertEqual(relay.relay([0x09], from: .clientToBroker), [0x09])
         if case .mqttDecodingFailed? = log.events.first {} else { XCTFail("expected a decoding failure") }
     }
+
+    func testRelayReleasesTheOtherDirectionsHeldBytesAfterDecodingFails() {
+        let relay = MQTTRelay(sink: CaptureLog(), broker: "b", rules: nil)
+        let connack: [UInt8] = [0x20, 0x02, 0x00, 0x00]
+        XCTAssertEqual(relay.relay(Array(connack.prefix(2)), from: .brokerToClient), [], "held until complete")
+        XCTAssertEqual(relay.relay([0x00, 0x01, 0x02], from: .clientToBroker), [0x00, 0x01, 0x02], "garbage switches to passthrough")
+        XCTAssertEqual(relay.relay(Array(connack.dropFirst(2)), from: .brokerToClient), connack,
+                       "the held half goes out ahead of the rest")
+    }
 }
 
 final class RewriteProxyTests: XCTestCase {
