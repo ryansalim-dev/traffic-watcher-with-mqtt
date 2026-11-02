@@ -1,9 +1,12 @@
 name: CI
 
+# Landing-page-only changes don't touch the app, so they skip CI (site.yml publishes them).
 on:
   push:
     branches: [main]
+    paths-ignore: ['site/**', '.github/workflows/site.yml']
   pull_request:
+    paths-ignore: ['site/**', '.github/workflows/site.yml']
 
 jobs:
   macos:
