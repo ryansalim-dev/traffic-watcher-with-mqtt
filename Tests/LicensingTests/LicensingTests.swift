@@ -48,6 +48,20 @@ final class EntitlementTests: XCTestCase {
         XCTAssertEqual(Entitlement.evaluate(license(expires: expiry), now: expiry + 1, releaseDate: nil), .free(.expired(expiry)))
     }
 
+    func testLicensesSavedBeforeProvidersExistedAreLemonSqueezy() throws {
+        // The shape FileLicenseStorage wrote before this change.
+        let saved = Data(#"{"key":"K","instanceID":"i","status":"active","purchasedAt":"2026-09-21T14:13:20Z","lastValidatedAt":"2026-09-21T14:13:20Z"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let license = try decoder.decode(StoredLicense.self, from: saved)
+        XCTAssertEqual(license.provider, LemonSqueezyClient.providerID)
+        XCTAssertEqual(license.key, "K")
+
+        var keygen = license
+        keygen.provider = "keygen"
+        XCTAssertEqual(try JSONDecoder().decode(StoredLicense.self, from: JSONEncoder().encode(keygen)), keygen)
+    }
+
     func testMaskedKey() {
         XCTAssertEqual(license().maskedKey, "••••••••5678")
     }
@@ -95,6 +109,7 @@ final class LemonSqueezyClientTests: XCTestCase {
 
         XCTAssertEqual(server.requests.first?.path, "activate")
         XCTAssertEqual(server.requests.first?.body, "instance_name=Ryan%27s%20MacBook&license_key=ABCD%201234")
+        XCTAssertEqual(license.provider, LemonSqueezyClient.providerID)
         XCTAssertEqual(license.instanceID, "inst-9")
         XCTAssertEqual(license.status, .active)
         XCTAssertEqual(license.customerEmail, "ryan@example.com")

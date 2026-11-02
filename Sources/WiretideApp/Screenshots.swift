@@ -46,7 +46,7 @@ enum Screenshots {
                                      configuration: configuration)
         let size = NSSize(width: 1440, height: 860)
         UserDefaults.standard.set(RowDensity.regular.rawValue, forKey: RowDensity.storageKey)
-        let firstLaunchLicense = LicenseManager(configuration: LicenseConfiguration(product: .init(storeID: 1, productIDs: [1]),
+        let firstLaunchLicense = LicenseManager(configuration: LicenseConfiguration(providers: [LemonSqueezyClient(product: .init(storeID: 1, productIDs: [1]))],
                                                                                     purchaseURL: nil, releaseDate: nil),
                                                 storage: FileLicenseStorage(url: scratch.appendingPathComponent("first.json")))
         try await shoot(ContentView(model: model, certificates: storage, license: firstLaunchLicense), size: size, dark: false,
@@ -58,7 +58,7 @@ enum Screenshots {
         for event in SampleTraffic.events() { model.ingest(event) }
 
         // License states for the License tab: no key yet, and an active Pro license checked today.
-        let licenseConfiguration = LicenseConfiguration(product: .init(storeID: 1, productIDs: [1]),
+        let licenseConfiguration = LicenseConfiguration(providers: [LemonSqueezyClient(product: .init(storeID: 1, productIDs: [1]))],
                                                         purchaseURL: URL(string: "https://example.com/pro"), releaseDate: nil)
         let freeLicense = LicenseManager(configuration: licenseConfiguration,
                                          storage: FileLicenseStorage(url: scratch.appendingPathComponent("free.json")))
