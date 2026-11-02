@@ -255,9 +255,15 @@ struct RecordingCapsule: View {
     }
 }
 
+/// Whether the timeline follows new rows (on by default), shared by the filter bar and the timeline.
+enum AutoScroll {
+    static let storageKey = "autoScroll"
+}
+
 /// One-click filters above the timeline, plus the host picked in the sidebar.
 struct FilterBar: View {
     @Bindable var model: CaptureViewModel
+    @AppStorage(AutoScroll.storageKey) private var autoScroll = true
 
     var body: some View {
         HStack(spacing: 4) {
@@ -293,12 +299,29 @@ struct FilterBar: View {
             }
             AddFilterMenu(model: model)
             Spacer(minLength: 8)
-            Text(model.visibleRows.count == model.rows.count
-                 ? "\(model.rows.count.formatted()) events"
-                 : "\(model.visibleRows.count.formatted()) of \(model.rows.count.formatted())")
-                .font(.system(size: 11.5))
-                .monospacedDigit()
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 8) {
+                if model.visibleRows.count != model.rows.count {
+                    Text("\(model.visibleRows.count.formatted()) of \(model.rows.count.formatted())")
+                        .monospacedDigit()
+                    Text("·")
+                }
+                Text("Newest at bottom")
+                Text("·")
+                Button {
+                    autoScroll.toggle()
+                } label: {
+                    Text("Auto-scroll")
+                        .foregroundStyle(autoScroll ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(autoScroll
+                      ? "New rows scroll into view while you're at the bottom of the list. Click to stop."
+                      : "Click to keep new rows in view while you're at the bottom of the list.")
+                .accessibilityAddTraits(autoScroll ? .isSelected : [])
+            }
+            .font(.system(size: 11.5))
+            .foregroundStyle(.tertiary)
         }
         .lineLimit(1)
         .padding(.horizontal, 12)
@@ -577,6 +600,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .background(TableHook(selection: .rounded))
         .scrollContentBackground(.hidden)
         .background(Theme.sidebar.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -768,6 +792,7 @@ struct TrafficTimeline: View {
     let density: RowDensity
     /// Code and Duration only mean something for HTTP, so they are hidden in the MQTT section.
     @State private var columns = TableColumnCustomization<TrafficRow>()
+    @AppStorage(AutoScroll.storageKey) private var autoScroll = true
 
     var body: some View {
         let rows = model.visibleRows
@@ -838,6 +863,7 @@ struct TrafficTimeline: View {
             .tableStyle(.inset(alternatesRowBackgrounds: false))
             .scrollContentBackground(.hidden)
             .background(Theme.canvas)
+            .background(TableHook(selection: .timeline, followsEnd: autoScroll, rowCount: rows.count))
             .onChange(of: model.section, initial: true) {
                 let visibility: Visibility = model.section == .mqtt ? .hidden : .automatic
                 columns[visibility: "code"] = visibility
