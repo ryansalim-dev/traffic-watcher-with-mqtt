@@ -243,7 +243,7 @@ enum Screenshots {
         let center = model.rewrites
         let windowSize = NSSize(width: 980, height: 660)
         let devices = model.rows.last { row in
-            if case .httpExchange(let e) = row.event { e.url.hasPrefix("https://api.example.com/v2/devices") } else { false }
+            if case .httpExchange(let e) = row.event { e.method == "GET" && e.url.hasPrefix("https://api.example.com/v2/devices") } else { false }
         }
 
         // Free tier, nothing set up yet: the empty state and the Pro notice.

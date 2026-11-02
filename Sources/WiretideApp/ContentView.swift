@@ -26,6 +26,16 @@ struct ContentView: View {
         var id: String { rawValue }
     }
 
+    /// Short enough to read in full next to the Pro buttons; the MQTT section's field is narrower.
+    private var searchPrompt: String {
+        if showsTopics { return "Filter topics" }
+        switch model.section {
+        case .mqtt: return "Filter topics, payloads"
+        case .http: return "Filter URLs, headers, bodies"
+        default: return "Filter URLs, topics, payloads"
+        }
+    }
+
     private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
     private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty }
 
@@ -80,7 +90,7 @@ struct ContentView: View {
                 ToolbarItem(placement: .primaryAction) {
                     // Narrower next to the Packets/Topics switch, so every toolbar button still fits.
                     ToolbarSearchField(text: $model.searchText,
-                                       prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads",
+                                       prompt: searchPrompt,
                                        width: model.section == .mqtt ? 160 : 220)
                 }
                 ToolbarItem(placement: .primaryAction) {
