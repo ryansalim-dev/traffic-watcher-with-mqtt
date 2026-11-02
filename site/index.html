@@ -3,17 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wiretide · HTTP, WebSocket and MQTT debugging for macOS</title>
-  <meta name="description" content="A native macOS debugging proxy that shows HTTP(S), WebSocket and MQTT traffic side by side in one timeline. Free during the beta.">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#0c0d12" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f7f7fa" media="(prefers-color-scheme: light)">
+  <title>Wiretide · HTTP, WebSocket and MQTT debugging proxy for macOS</title>
+  <meta name="description" content="Wiretide is a native macOS debugging proxy for HTTPS, WebSocket and MQTT. Capture and inspect for free; Pro adds breakpoints, map and rewrite, MQTT publish and replay, and JavaScript scripting.">
+  <link rel="canonical" href="https://wiretide.app/">
+  <meta name="robots" content="index, follow">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#111417" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f8f9" media="(prefers-color-scheme: light)">
+
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Wiretide">
-  <meta property="og:description" content="HTTP, WebSocket and MQTT in one timeline. A native macOS debugging proxy for app developers.">
-  <meta property="og:image" content="https://ryansalim-dev.github.io/traffic-watcher-with-mqtt/images/og.png">
+  <meta property="og:site_name" content="Wiretide">
+  <meta property="og:url" content="https://wiretide.app/">
+  <meta property="og:title" content="Wiretide · HTTP and MQTT debugging proxy for macOS">
+  <meta property="og:description" content="HTTPS, WebSocket and MQTT in one timeline. Pause, rewrite, script and replay traffic in a native Mac app.">
+  <meta property="og:image" content="https://wiretide.app/images/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Wiretide's timeline with HTTPS requests and MQTT packets side by side.">
+  <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Wiretide · HTTP and MQTT debugging proxy for macOS">
+  <meta name="twitter:description" content="HTTPS, WebSocket and MQTT in one timeline. Pause, rewrite, script and replay traffic in a native Mac app.">
+  <meta name="twitter:image" content="https://wiretide.app/images/og.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Wiretide",
+    "url": "https://wiretide.app/",
+    "image": "https://wiretide.app/images/og.png",
+    "description": "A native macOS debugging proxy for HTTPS, WebSocket and MQTT, with breakpoints, map and rewrite, MQTT publish and replay, and JavaScript scripting.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS 14 or later",
+    "offers": [
+      { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Pro", "price": "79", "priceCurrency": "USD", "description": "One-time purchase with 12 months of updates" }
+    ]
+  }
+  </script>
+
   <link rel="icon" href="images/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
   <script src="config.js"></script>
   <script src="main.js" defer></script>
@@ -28,33 +59,34 @@
       <nav class="nav-links" aria-label="Sections">
         <a href="#features">Features</a>
         <a href="#mqtt">MQTT</a>
+        <a href="#pro">Pro tools</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
       </nav>
-      <a class="btn btn-small" data-download href="#download">Download beta</a>
+      <a class="btn btn-small" data-download href="#download">Download</a>
     </div>
   </header>
 
   <main id="top">
     <section class="hero">
       <div class="wrap">
-        <p class="pill"><span class="dot"></span>Public beta · free while it lasts</p>
+        <p class="pill"><span class="dot"></span>New: breakpoints, map &amp; rewrite and scripting</p>
         <h1>Your app talks HTTP <em>and</em> MQTT.<br>Now you can watch both.</h1>
-        <p class="lede">Wiretide is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, in the order they happened.</p>
+        <p class="lede">Wiretide is a native macOS debugging proxy that puts HTTPS requests, WebSocket frames and MQTT packets in one timeline, then lets you pause, rewrite, script and replay them.</p>
         <div class="cta-row">
           <a class="btn btn-primary" data-download href="#download">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Zm-8 15a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/></svg>
             Download for macOS
           </a>
-          <a class="btn btn-ghost" href="#waitlist">Get the early-bird price</a>
+          <a class="btn btn-ghost" href="#pricing">See Pro · $79 once</a>
         </div>
-        <p class="fine">macOS 14 Sonoma or later · Apple silicon and Intel · Notarized by Apple</p>
+        <p class="fine">Free to capture and inspect · macOS 14 Sonoma or later · Apple silicon and Intel · Notarized by Apple</p>
 
         <figure class="window hero-shot">
           <picture>
-            <source srcset="images/02-timeline-http-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="images/01-timeline-http.webp" width="1440" height="860"
-                 alt="Wiretide's timeline: HTTPS requests, MQTT CONNECT, SUBSCRIBE and PUBLISH packets and WebSocket text frames in one list, with a JSON response open in the inspector.">
+            <source srcset="images/timeline-light.webp" media="(prefers-color-scheme: light)">
+            <img src="images/timeline-dark.webp" width="1440" height="860"
+                 alt="Wiretide's timeline: HTTPS requests, MQTT CONNECT, SUBSCRIBE and PUBLISH packets and WebSocket text frames in one list, with a JSON response and its timing open in the inspector.">
           </picture>
         </figure>
 
@@ -69,7 +101,7 @@
 
     <section id="features" class="section">
       <div class="wrap">
-        <p class="eyebrow">Features</p>
+        <p class="eyebrow">Free features</p>
         <h2>Everything a debugging proxy should do, without the protocol blind spot.</h2>
         <div class="grid features">
           <article class="card">
@@ -89,8 +121,8 @@
           </article>
           <article class="card">
             <div class="icon i-search" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.19l4.6 4.6a1 1 0 0 1-1.4 1.42l-4.6-4.6A7 7 0 1 1 10 3Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z"/></svg></div>
-            <h3>Search everything</h3>
-            <p>Full-text search across URLs, headers, text bodies, MQTT topics and payloads, in the live session and the ones you saved.</p>
+            <h3>Search and filter</h3>
+            <p>Full-text search across URLs, headers, bodies, topics and payloads, plus one-click filters for JSON, media, errors and publishes.</p>
           </article>
           <article class="card">
             <div class="icon i-warn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6l-9-4Zm0 2.18 7 3.11V12c0 3.9-2.9 7.3-7 8-4.1-.7-7-4.1-7-8V7.29l7-3.11ZM11 7h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg></div>
@@ -99,8 +131,8 @@
           </article>
           <article class="card">
             <div class="icon i-export" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a1 1 0 0 1 .7.3l4 4a1 1 0 1 1-1.4 1.4L13 6.42V15a1 1 0 1 1-2 0V6.41L8.7 8.7a1 1 0 1 1-1.4-1.4l4-4A1 1 0 0 1 12 3ZM5 14a1 1 0 0 1 1 1v3h12v-3a1 1 0 1 1 2 0v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z"/></svg></div>
-            <h3>Export and share</h3>
-            <p>HAR 1.2 for HTTP and JSON Lines for MQTT, so a capture can go into a bug report, a test fixture or another tool.</p>
+            <h3>Timing and export</h3>
+            <p>DNS, connect, TLS, waiting and download phases for every request. Export HAR 1.2 for HTTP and JSON Lines for MQTT.</p>
           </article>
         </div>
       </div>
@@ -114,51 +146,160 @@
           <p>Most proxies stop at HTTP. IoT and real-time apps don't. Point your app at a local port and Wiretide relays it to your broker, decoding every packet on the way through.</p>
           <ul class="checks">
             <li><strong>Plain TCP, TLS or WebSocket.</strong> For MQTT over TLS it terminates and re-encrypts, so you see the packets without changing the broker.</li>
-            <li><strong>A live topic tree.</strong> Browse <code>home/kitchen/temperature</code> the way you think about it, with the last payload and message counts per topic.</li>
-            <li><strong>Payloads you can read.</strong> JSON is pretty-printed, everything else has a hex view one click away.</li>
+            <li><strong>A live topic tree.</strong> Browse <code>home/kitchen/temperature</code> the way you think about it, with the last payload, message rate and counts per topic.</li>
+            <li><strong>Charts from your payloads.</strong> Pick a numeric JSON field and watch it change over the session.</li>
             <li><strong>Session context.</strong> Client ID, protocol version, keep alive and per-direction topic aliases are tracked per connection.</li>
           </ul>
         </div>
         <div class="split-media">
           <figure class="window">
-            <img src="images/05-mqtt-topic-tree.webp" width="1440" height="860" loading="lazy"
-                 alt="The MQTT topic tree: home, bedroom, garage and kitchen topics with their last JSON payloads and message counts.">
+            <picture>
+              <source srcset="images/topics-light.webp" media="(prefers-color-scheme: light)">
+              <img src="images/topics-dark.webp" width="1440" height="860" loading="lazy"
+                   alt="The MQTT topic tree with last payloads and rate sparklines, and a chart of the celsius field for home/kitchen/temperature in the inspector.">
+            </picture>
           </figure>
           <figure class="window window-offset">
-            <img src="images/04-mqtt-connect-dark.webp" width="1440" height="860" loading="lazy"
-                 alt="The MQTT packet list in dark mode with a CONNECT packet open, showing client ID, protocol MQTT 3.1.1, clean start, keep alive and a hex dump.">
+            <picture>
+              <source srcset="images/mqtt-packets-light.webp" media="(prefers-color-scheme: light)">
+              <img src="images/mqtt-connect-dark.webp" width="1440" height="860" loading="lazy"
+                   alt="The MQTT packet list with a packet open in the inspector.">
+            </picture>
           </figure>
         </div>
       </div>
     </section>
 
-    <section class="section">
+    <section id="pro" class="section">
+      <div class="wrap">
+        <p class="eyebrow">Pro tools</p>
+        <h2>Don't just watch the traffic. Change it.</h2>
+        <p class="sub">Test the edge cases your backend can't give you on demand: a slow response, a missing field, a broker that sends 41.5&nbsp;°C. Pro works on HTTP and MQTT alike.</p>
+
+        <div class="pro-list">
+          <article class="pro-item">
+            <div class="pro-copy">
+              <span class="pro-tag">Breakpoints</span>
+              <h3>Pause a request before it leaves, or a response before your app sees it.</h3>
+              <p>Edit the method, URL, headers, status or body in place, then continue, return your edit or abort.</p>
+              <ul class="checks">
+                <li>Match by host, path and method, on requests, responses or both</li>
+                <li>JSON editor with formatting and validation</li>
+                <li>Edited exchanges are marked in the timeline</li>
+              </ul>
+            </div>
+            <div class="pro-media">
+              <figure class="window">
+                <picture>
+                  <source srcset="images/breakpoint-light.webp" media="(prefers-color-scheme: light)">
+                  <img src="images/breakpoint-dark.webp" width="1440" height="760" loading="lazy"
+                       alt="A paused response: status 200, its headers and a JSON body ready to edit, with Abort, Reset, Continue and Return edited buttons.">
+                </picture>
+              </figure>
+            </div>
+          </article>
+
+          <article class="pro-item">
+            <div class="pro-copy">
+              <span class="pro-tag">Map &amp; Rewrite</span>
+              <h3>Mock an endpoint, point it at localhost, or fix a header on the fly.</h3>
+              <p>Rules apply live as traffic flows, with no restart and no code changes in your app.</p>
+              <ul class="checks">
+                <li><strong>Map Local</strong> answers from an inline body or a file</li>
+                <li><strong>Map Remote</strong> sends matching requests to another server</li>
+                <li><strong>Rewrite</strong> URLs, headers, query, status, body and JSON values</li>
+                <li><strong>MQTT rules</strong> rewrite topics, payloads and retain flags over TCP, TLS and WebSockets</li>
+              </ul>
+            </div>
+            <div class="pro-media has-offset">
+              <figure class="window">
+                <picture>
+                  <source srcset="images/rewrite-light.webp" media="(prefers-color-scheme: light)">
+                  <img src="images/rewrite-dark.webp" width="980" height="660" loading="lazy"
+                       alt="The Map &amp; Rewrite window with a rule that sets a header, sets a JSON value and replaces Cache-Control.">
+                </picture>
+              </figure>
+              <figure class="window window-offset">
+                <img src="images/rewrite-mqtt-dark.webp" width="980" height="660" loading="lazy"
+                     alt="An MQTT rule that sets the celsius value and rewrites the topic of matching PUBLISH packets.">
+              </figure>
+            </div>
+          </article>
+
+          <article class="pro-item">
+            <div class="pro-copy">
+              <span class="pro-tag">MQTT publish &amp; replay</span>
+              <h3>Send any message to your broker, or replay one you captured.</h3>
+              <p>Pick a topic, QoS, retain flag and MQTT 5 properties, then send once or on a repeat to test how your app copes.</p>
+              <ul class="checks">
+                <li>Replay a captured PUBLISH with one click</li>
+                <li>JSON, text or hex payloads</li>
+                <li>Send N times at a fixed interval</li>
+              </ul>
+            </div>
+            <div class="pro-media">
+              <figure class="window">
+                <picture>
+                  <source srcset="images/replay-light.webp" media="(prefers-color-scheme: light)">
+                  <img src="images/replay-dark.webp" width="1440" height="760" loading="lazy"
+                       alt="The Replay message sheet with a topic, QoS 1, retain on, MQTT 5 properties, a JSON payload and Send 5 times every 500 ms.">
+                </picture>
+              </figure>
+            </div>
+          </article>
+
+          <article class="pro-item">
+            <div class="pro-copy">
+              <span class="pro-tag">Scripting</span>
+              <h3>When a rule isn't enough, write a little JavaScript.</h3>
+              <p>Define <code>onRequest</code>, <code>onResponse</code> or <code>onPublish</code> to edit traffic, or answer locally with <code>respond()</code>.</p>
+              <ul class="checks">
+                <li>Highlighted editor with a live syntax check and templates</li>
+                <li>Console output, errors and a trial run on captured traffic</li>
+                <li>Runs on HTTP, MQTT and MQTT over WebSockets</li>
+              </ul>
+            </div>
+            <div class="pro-media">
+              <figure class="window">
+                <picture>
+                  <source srcset="images/scripts-light.webp" media="(prefers-color-scheme: light)">
+                  <img src="images/scripts-dark.webp" width="1040" height="720" loading="lazy"
+                       alt="The Scripts window with an onResponse script that marks every device online, and a console showing its output.">
+                </picture>
+              </figure>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt">
       <div class="wrap">
         <p class="eyebrow">A closer look</p>
         <h2>Native, fast and at home on your Mac.</h2>
-        <p class="sub">Written in SwiftUI on top of SwiftNIO. Light and dark mode, universal for Apple silicon and Intel, and no Electron.</p>
+        <p class="sub">Written in SwiftUI on top of SwiftNIO. Dark and light mode, universal for Apple silicon and Intel, and no Electron.</p>
         <div class="gallery" role="list">
           <figure class="shot" role="listitem">
-            <img src="images/08-search.webp" width="1440" height="860" loading="lazy" alt="Searching for a term across HTTP bodies and MQTT payloads.">
-            <figcaption>One search box for headers, bodies, topics and payloads.</figcaption>
+            <img src="images/filters-dark.webp" width="1440" height="860" loading="lazy" alt="The timeline filtered to errors in dark mode.">
+            <figcaption>Filter chips and search for headers, bodies, topics and payloads.</figcaption>
           </figure>
           <figure class="shot" role="listitem">
-            <img src="images/06-websocket.webp" width="1440" height="860" loading="lazy" alt="WebSocket text frames in both directions with the payload open in the inspector.">
+            <img src="images/websocket-light.webp" width="1440" height="860" loading="lazy" alt="WebSocket text frames in both directions with the payload open in the inspector.">
             <figcaption>WebSocket frames in both directions, decoded.</figcaption>
           </figure>
           <figure class="shot" role="listitem">
-            <img src="images/07-issues-pinned-host.webp" width="1440" height="860" loading="lazy" alt="The Issues list showing a failed request and a host that rejected the certificate, with a Bypass button.">
+            <img src="images/issues-light.webp" width="1440" height="860" loading="lazy" alt="The Issues list showing a failed request and a host that rejected the certificate, with a Bypass button.">
             <figcaption>Failures and pinned hosts collected under Issues.</figcaption>
           </figure>
         </div>
       </div>
     </section>
 
-    <section id="pricing" class="section section-alt">
+    <section id="pricing" class="section">
       <div class="wrap">
         <p class="eyebrow">Pricing</p>
         <h2>Free to capture. Pay once for the power tools.</h2>
-        <p class="sub">Everything is free during the beta. Join the waitlist to lock in the early-bird price for Pro.</p>
+        <p class="sub">Capturing and inspecting stay free. Pro is a one-time purchase with 12 months of updates, and the version you have keeps working forever.</p>
         <div class="grid pricing">
           <article class="plan">
             <h3>Free</h3>
@@ -166,40 +307,45 @@
             <p class="plan-note">Forever, for capturing and inspecting.</p>
             <ul class="checks">
               <li>HTTP, HTTPS, WebSocket and MQTT capture</li>
-              <li>Packet and topic views for MQTT</li>
-              <li>Full-text search</li>
+              <li>MQTT packet list, topic tree and payload charts</li>
+              <li>Search, filters and request timing</li>
               <li>HAR and MQTT JSON Lines export</li>
               <li>Keeps your 3 most recent sessions</li>
             </ul>
             <a class="btn btn-ghost btn-block" data-download href="#download">Download</a>
           </article>
           <article class="plan plan-pro">
-            <p class="badge">Early-bird pricing for the waitlist</p>
+            <p class="badge" data-prelaunch>Early-bird price for the waitlist</p>
             <h3>Pro</h3>
             <p class="price"><span class="amount">$79</span><span class="per">one time</span></p>
             <p class="plan-note">Includes 12 months of updates. Keep using your version forever.</p>
             <ul class="checks">
               <li>Everything in Free</li>
+              <li>Breakpoints for requests and responses</li>
+              <li>Map Local, Map Remote and Rewrite</li>
+              <li>MQTT rewrite rules, including over WebSockets</li>
+              <li>MQTT publish and replay</li>
+              <li>JavaScript scripting</li>
               <li>Unlimited saved sessions</li>
-              <li>MQTT publish and replay <span class="soon">beta</span></li>
-              <li>Breakpoints <span class="soon">beta</span></li>
-              <li>Map and rewrite <span class="soon">beta</span></li>
-              <li>Scripting <span class="soon">beta</span></li>
             </ul>
             <a class="btn btn-primary btn-block" data-checkout href="#waitlist">Join the waitlist</a>
           </article>
         </div>
-        <p class="fine center">Features marked beta arrive during the beta period. Prices in USD; tax is calculated at checkout.</p>
+        <p class="fine center">Prices in USD. Tax is calculated at checkout.</p>
       </div>
     </section>
 
-    <section id="faq" class="section">
+    <section id="faq" class="section section-alt">
       <div class="wrap narrow">
         <p class="eyebrow">FAQ</p>
         <h2>Questions</h2>
         <details>
           <summary>Does my traffic leave my Mac?</summary>
-          <p>No. Captures are stored locally in a SQLite database on your Mac. The only network call the app makes on its own is checking your Pro license with the store, plus checking for updates.</p>
+          <p>No. Captures are stored locally in a SQLite database on your Mac, and scripts run on your Mac too. The only network calls the app makes on its own are checking your Pro license with the store and checking for updates.</p>
+        </details>
+        <details>
+          <summary>What's free and what needs Pro?</summary>
+          <p>Capturing and inspecting everything is free: HTTP, HTTPS, WebSocket and MQTT, search, timing and export. Pro adds the tools that change traffic (breakpoints, map and rewrite, MQTT publish and replay, scripting) and keeps unlimited saved sessions.</p>
         </details>
         <details>
           <summary>Why isn't it on the Mac App Store?</summary>
@@ -207,7 +353,7 @@
         </details>
         <details>
           <summary>How do I capture MQTT?</summary>
-          <p>Add your broker in Settings. Wiretide listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy.</p>
+          <p>Add your broker in Settings. Wiretide listens on a local port, for example <code>localhost:18830</code>, and forwards to the broker. Point your app at that port. MQTT over WebSocket is picked up automatically through the HTTP proxy, and rules and scripts apply there too.</p>
         </details>
         <details>
           <summary>Does it work with the iOS Simulator and real devices?</summary>
@@ -222,8 +368,8 @@
 
     <section id="waitlist" class="section cta">
       <div class="wrap narrow center">
-        <h2>Be first in line for Pro.</h2>
-        <p class="sub">Join the waitlist for release news and the early-bird price. No spam, one email when it matters.</p>
+        <h2 data-prelaunch>Be first in line for Pro.</h2>
+        <p class="sub" data-prelaunch>Join the waitlist for release news and the early-bird price. No spam, one email when it matters.</p>
         <form class="waitlist" data-waitlist hidden>
           <label class="sr-only" for="email">Email address</label>
           <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
@@ -234,8 +380,8 @@
           <a class="btn btn-ghost" href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases">Watch releases on GitHub</a>
         </div>
         <div id="download" class="download">
-          <a class="btn btn-primary" data-download href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases/latest">Download the beta for macOS</a>
-          <p class="fine">Free during the beta · macOS 14 or later</p>
+          <a class="btn btn-primary" data-download href="https://github.com/ryansalim-dev/traffic-watcher-with-mqtt/releases/latest">Download Wiretide for macOS</a>
+          <p class="fine">Free to capture and inspect · macOS 14 or later</p>
         </div>
       </div>
     </section>
