@@ -3,30 +3,14 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public enum LicenseError: Error, Equatable, Sendable, CustomStringConvertible {
-    /// The store rejected the request; `message` is its explanation (e.g. "license_key not found.").
-    case rejected(String)
-    /// The key belongs to another product or store.
-    case wrongProduct
-    case activationLimitReached
-    case network(String)
-    case unexpectedResponse
-
-    public var description: String {
-        switch self {
-        case .rejected(let message): "The license server said: \(message)"
-        case .wrongProduct: "This key is for a different product. Check that you copied the Wiretide Pro key."
-        case .activationLimitReached: "This key is already active on its maximum number of Macs. Deactivate it on another Mac first."
-        case .network(let message): "Couldn't reach the license server: \(message)"
-        case .unexpectedResponse: "The license server sent a response Wiretide didn't understand."
-        }
-    }
-}
-
 /// Talks to the Lemon Squeezy License API (`/v1/licenses/activate|validate|deactivate`).
 /// Those endpoints take the license key itself as the credential, so the app ships no API secret.
-public struct LemonSqueezyClient: Sendable {
-    public typealias Transport = @Sendable (URLRequest) async throws -> (Data, Int)
+public struct LemonSqueezyClient: LicenseProvider {
+    public typealias Transport = LicenseTransport
+    public static let providerID = "lemonsqueezy"
+
+    public var id: String { Self.providerID }
+    public var storeName: String { "Lemon Squeezy" }
 
     /// Identifies our product so keys from other Lemon Squeezy stores are refused.
     public struct Product: Equatable, Sendable {
@@ -90,6 +74,7 @@ public struct LemonSqueezyClient: Sendable {
         }
         guard let purchasedAt = Self.date(licenseKey.createdAt) else { throw LicenseError.unexpectedResponse }
         return StoredLicense(
+            provider: id,
             key: key,
             instanceID: instanceID,
             status: StoredLicense.Status(rawValue: licenseKey.status) ?? .disabled,
@@ -145,10 +130,7 @@ public struct LemonSqueezyClient: Sendable {
         return ISO8601DateFormatter().date(from: trimmed)
     }
 
-    private static let urlSessionTransport: Transport = { request in
-        let (data, response) = try await URLSession.shared.data(for: request)
-        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
-    }
+    private static let urlSessionTransport: Transport = defaultLicenseTransport
 
     struct Response: Decodable {
         struct LicenseKey: Decodable {
