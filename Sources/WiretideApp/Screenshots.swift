@@ -182,10 +182,10 @@ enum Screenshots {
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
         let stageSize = NSSize(width: 1360, height: 740)
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 540) {
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
             BreakpointEditor(center: center, item: center.paused[0])
         }, size: stageSize, dark: false, name: "14-breakpoint-request", into: directory)
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 540) {
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
             BreakpointEditor(center: center, item: center.paused[1])
         }, size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
@@ -214,7 +214,7 @@ enum Screenshots {
         model.composer.intervalMilliseconds = 500
         let stage = NSSize(width: 1360, height: 740)
         func composerStage() -> some View {
-            SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 520) {
+            SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 520) {
                 MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
             }
         }
@@ -225,7 +225,7 @@ enum Screenshots {
         model.preparePublish(toTopic: "home/kitchen/light/set")
         model.composer.payloadText = #"{"on": true, "brightness": 80}"#
         model.composer.repeatCount = 1
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: freeLicense), height: 560) {
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false), height: 560) {
             MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
         }, size: stage, dark: false, name: "20-mqtt-publish-free", into: directory)
     }

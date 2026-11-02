@@ -13,6 +13,8 @@ struct ContentView: View {
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
     @State var showInspector = true
+    /// Off only in screenshots that draw a sheet over the window themselves.
+    var presentsSheets = true
     @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
 
     enum MQTTMode: String, CaseIterable, Identifiable {
@@ -98,11 +100,11 @@ struct ContentView: View {
                 .help("Publish an MQTT message (⇧⌘P)")
             }
         }
-        .sheet(isPresented: Binding(get: { model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
+        .sheet(isPresented: Binding(get: { presentsSheets && model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
             MQTTComposerView(composer: model.composer,
                              suggestions: model.topicSuggestions(excluding: model.composer.topic)) { model.composer.isPresented = false }
         }
-        .sheet(item: Binding(get: { model.breakpoints.paused.first }, set: { _ in })) { item in
+        .sheet(item: Binding(get: { presentsSheets ? model.breakpoints.paused.first : nil }, set: { _ in })) { item in
             BreakpointEditor(center: model.breakpoints, item: item)
                 .id(item.id)
         }
