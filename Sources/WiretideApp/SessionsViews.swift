@@ -428,7 +428,9 @@ struct SavedSessionBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(Theme.accent.opacity(0.1))
+        // Opaque, so timeline rows scrolling under the inset don't show through.
+        .background(Theme.accent.opacity(0.12))
+        .background(Theme.canvas)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 }
@@ -444,8 +446,11 @@ enum SessionFormat {
 
     /// "14:05 · 12 min · 1,204 events"
     static func line(_ session: CaptureSession) -> String {
-        var parts = [session.createdAt.formatted(date: Calendar.current.isDateInToday(session.createdAt) ? .omitted : .abbreviated,
-                                                 time: .shortened)]
+        // The list already groups by day, so recent sessions show only their time.
+        let calendar = Calendar.current
+        let recent = calendar.isDateInToday(session.createdAt) || calendar.isDateInYesterday(session.createdAt)
+        var parts = [recent ? session.createdAt.formatted(date: .omitted, time: .shortened)
+                            : session.createdAt.formatted(.dateTime.month(.abbreviated).day())]
         if let length = length(session) { parts.append(length) }
         parts.append("\(session.eventCount.formatted()) event\(session.eventCount == 1 ? "" : "s")")
         return parts.joined(separator: " · ")

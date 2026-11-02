@@ -152,7 +152,13 @@ enum Screenshots {
             let start = Date().addingTimeInterval(offset)
             try seeder.startSession(named: name, createdAt: start)
             for round in 0..<repeats {
-                for event in SampleTraffic.events(startingAt: start.addingTimeInterval(Double(round) * 240 + 5)) { seeder.record(event) }
+                // Events without their own time would be stamped now; leave them out of the backdated sessions.
+                for event in SampleTraffic.events(startingAt: start.addingTimeInterval(Double(round) * 240 + 5)) {
+                    switch event {
+                    case .tlsInterceptionFailed, .tunnelClosed, .mqttDecodingFailed, .webSocketDecodingFailed: continue
+                    default: seeder.record(event)
+                    }
+                }
             }
             if name.contains("sensor") {
                 for event in SampleTraffic.temperatureReadings(count: 120, endingAt: start.addingTimeInterval(3 * hour)) { seeder.record(event) }
