@@ -129,6 +129,7 @@ struct ContentView: View {
             }
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .background(GraphiteWindow())
         .tint(Theme.accent)
         .overlay(alignment: .top) {
             if let stagedSheet { stagedSheet }
@@ -162,6 +163,22 @@ struct ContentView: View {
 }
 
 // MARK: Toolbar
+
+/// Gives the hosting window a transparent title bar over the mockup's toolbar color. Without this the window
+/// draws its own neutral gray title bar behind the content column's toolbar.
+private struct GraphiteWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowHook() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class WindowHook: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            window.titlebarAppearsTransparent = true
+            window.backgroundColor = NSColor(Theme.bar)
+        }
+    }
+}
 
 /// Start and stop capture. While recording it shows the elapsed time, recent activity and the event count.
 struct RecordingCapsule: View {
