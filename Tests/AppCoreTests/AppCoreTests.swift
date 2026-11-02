@@ -530,6 +530,7 @@ final class LicenseManagerTests: XCTestCase {
 }
 
 final class SessionLimitTests: XCTestCase {
+    @MainActor
     private func record(_ model: CaptureViewModel) {
         model.ingest(SampleTraffic.events()[1])
     }
