@@ -16,6 +16,8 @@ struct ContentView: View {
     @State var columnVisibility = NavigationSplitViewVisibility.all
     /// Off only in screenshots that draw a sheet over the window themselves.
     var presentsSheets = true
+    /// Screenshots only: a sheet drawn over the dimmed window, since a real sheet is a separate window.
+    var stagedSheet: AnyView?
     @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
 
     enum MQTTMode: String, CaseIterable, Identifiable {
@@ -118,6 +120,9 @@ struct ContentView: View {
         }
         .toolbarBackground(Theme.bar, for: .windowToolbar)
         .tint(Theme.accent)
+        .overlay(alignment: .top) {
+            if let stagedSheet { stagedSheet }
+        }
         .sheet(isPresented: Binding(get: { presentsSheets && model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
             MQTTComposerView(composer: model.composer,
                              suggestions: model.topicSuggestions(excluding: model.composer.topic)) { model.composer.isPresented = false }

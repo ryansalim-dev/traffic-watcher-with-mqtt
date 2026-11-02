@@ -183,12 +183,14 @@ enum Screenshots {
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
         let stageSize = NSSize(width: 1440, height: 760)
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(height: 540) {
             BreakpointEditor(center: center, item: center.paused[0])
-        }, size: stageSize, dark: false, name: "14-breakpoint-request", into: directory, dimToolbar: true)
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
+        })), size: stageSize, dark: false, name: "14-breakpoint-request", into: directory, dimToolbar: true)
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(height: 540) {
             BreakpointEditor(center: center, item: center.paused[1])
-        }, size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory, dimToolbar: true)
+        })), size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory, dimToolbar: true)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
                         size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
         center.resumeAll()
@@ -214,10 +216,11 @@ enum Screenshots {
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
         let stage = NSSize(width: 1440, height: 760)
-        func composerStage() -> some View {
-            SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 520) {
+        func composerStage() -> ContentView {
+            ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
+                        stagedSheet: AnyView(SheetStage(height: 520) {
                 MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
-            }
+            }))
         }
         try await shoot(composerStage(), size: stage, dark: false, name: "18-mqtt-replay", into: directory, dimToolbar: true)
         try await shoot(composerStage(), size: stage, dark: true, name: "19-mqtt-replay-dark", into: directory, dimToolbar: true)
@@ -226,9 +229,10 @@ enum Screenshots {
         model.preparePublish(toTopic: "home/kitchen/light/set")
         model.composer.payloadText = #"{"on": true, "brightness": 80}"#
         model.composer.repeatCount = 1
-        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false), height: 560) {
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(height: 560) {
             MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
-        }, size: stage, dark: false, name: "20-mqtt-publish-free", into: directory, dimToolbar: true)
+        })), size: stage, dark: false, name: "20-mqtt-publish-free", into: directory, dimToolbar: true)
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL,
@@ -311,30 +315,24 @@ enum Screenshots {
         try png.write(to: url)
     }
 }
-/// A sheet drawn over the dimmed main window, the way the mockups show sheets. A real sheet is its own window,
+/// A sheet over the dimmed main window (ContentView's `stagedSheet`), the way the mockups show sheets. A real sheet is its own window,
 /// which a window capture leaves out, so screenshots compose the two instead.
-private struct SheetStage<Background: View, Sheet: View>: View {
+private struct SheetStage<Sheet: View>: View {
     static var dimming: Double { 0.42 }
-    let background: Background
     var width: CGFloat = 760
     let height: CGFloat
     @ViewBuilder var sheet: Sheet
 
     var body: some View {
-        // An overlay keeps the window's content as the root view, so its columns lay out as in the other shots.
-        background
-            .allowsHitTesting(false)
-            .overlay(alignment: .top) {
-                ZStack(alignment: .top) {
-                    // Below the toolbar only: the toolbar is drawn by the window, so `shoot` dims it in the PNG instead.
-                    Color.black.opacity(SheetStage.dimming).ignoresSafeArea(edges: [.horizontal, .bottom])
-                    sheet
-                        .frame(width: width, height: height)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
-                        .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
-                }
-            }
+        ZStack(alignment: .top) {
+            // Below the toolbar only: the toolbar is drawn by the window, so `shoot` dims it in the PNG instead.
+            Color.black.opacity(SheetStage.dimming).ignoresSafeArea(edges: [.horizontal, .bottom])
+            sheet
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
+        }
     }
 }
 
