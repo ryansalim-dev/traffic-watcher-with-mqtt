@@ -83,6 +83,7 @@ enum Screenshots {
 
         model.selection = row { $0.badge == "CONNECT" }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "04-mqtt-connect-dark", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "04b-mqtt-connect", into: directory)
 
         for event in SampleTraffic.temperatureReadings() { model.ingest(event) }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, mqttMode: .topics, selectedTopic: "home/kitchen/temperature"),
@@ -93,10 +94,12 @@ enum Screenshots {
         model.section = .webSocket
         model.selection = row { $0.kind == .webSocket && $0.size > 50 }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "06-websocket", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "06b-websocket-dark", into: directory)
 
         model.section = .issues
         model.selection = row { $0.kind == .tls }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "07-issues-pinned-host", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "07b-issues-pinned-host-dark", into: directory)
 
         model.section = .all
         model.searchText = "kitchen"
@@ -109,6 +112,7 @@ enum Screenshots {
         model.hostFilter = "api.example.com"
         model.selection = row { $0.badge == "503" }
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: true, name: "08b-filters-dark", into: directory)
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense), size: size, dark: false, name: "08d-filters", into: directory)
         model.quickFilter = .all
         model.hostFilter = nil
         UserDefaults.standard.set(RowDensity.compact.rawValue, forKey: RowDensity.storageKey)
@@ -311,6 +315,10 @@ enum Screenshots {
                                     stagedSheet: AnyView(SheetStage(height: 540) {
             BreakpointEditor(center: center, item: center.paused[1])
         })), size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory, dimToolbar: true)
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(height: 540) {
+            BreakpointEditor(center: center, item: center.paused[1])
+        })), size: stageSize, dark: false, name: "15b-breakpoint-response", into: directory, dimToolbar: true)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
                         size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
         center.resumeAll()
@@ -425,6 +433,8 @@ enum Screenshots {
                         title: "Map & Rewrite")
         center.selection = .mqtt(center.mqttRules[0].id)
         try await shoot(RulesWindow(model: model), size: windowSize, dark: true, name: "25-rules-mqtt-dark", into: directory,
+                        title: "Map & Rewrite")
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: false, name: "25b-rules-mqtt", into: directory,
                         title: "Map & Rewrite")
 
         // The main window: an exchange answered by Map Local, the toolbar count and the sidebar line.
