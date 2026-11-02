@@ -214,6 +214,24 @@ public final class LicenseManager {
         recompute()
     }
 
+    /// The last day a release can come out and still be covered by this Mac's license, or nil when
+    /// updates are unrestricted (no license, or one the store revoked: those run as Free anyway).
+    /// The updater uses it to skip releases that would turn Pro off.
+    public var updatesCoveredUntil: Date? {
+        guard let license, license.status == .active else { return nil }
+        return policy.updatesCovered(until: license.purchasedAt)
+    }
+
+    /// Whether a release published at `published` keeps Pro working for this license. Compared by UTC
+    /// day, like the build's `TWReleaseDate`, so a release from the last covered day still counts.
+    public nonisolated static func updateIsCovered(published: Date?, coveredUntil: Date?) -> Bool {
+        guard let coveredUntil else { return true }
+        guard let published else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar.startOfDay(for: published) <= coveredUntil
+    }
+
     public func recompute() {
         entitlement = Entitlement.evaluate(license, now: now(), releaseDate: configuration.releaseDate, policy: policy)
     }
