@@ -175,6 +175,17 @@ final class LemonSqueezyClientTests: XCTestCase {
         await assertThrows(.rejected("license_key not found.")) { _ = try await client.validate(stored) }
     }
 
+    func testServerTroubleIsNotARefusal() async {
+        let server = FakeServer()
+        let client = LemonSqueezyClient(product: product, transport: server.transport)
+        server.responses = [(500, #"{"valid": false, "error": "Internal server error."}"#)]
+        await assertThrows(.network("server error 500")) { _ = try await client.validate(license()) }
+        server.responses = [(429, #"{"error": "Too many attempts."}"#)]
+        await assertThrows(.network("too many requests, try again later")) { _ = try await client.validate(license()) }
+        server.responses = [(200, "<html>Sign in to the hotel Wi-Fi</html>")]
+        await assertThrows(.unexpectedResponse) { _ = try await client.validate(license()) }
+    }
+
     func testDeactivate() async throws {
         let server = FakeServer()
         let client = LemonSqueezyClient(product: product, transport: server.transport)

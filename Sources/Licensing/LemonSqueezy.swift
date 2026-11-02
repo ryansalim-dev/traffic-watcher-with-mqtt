@@ -107,8 +107,13 @@ public struct LemonSqueezyClient: LicenseProvider {
         } catch {
             throw LicenseError.network(error.localizedDescription)
         }
+        // Server trouble and rate limits say nothing about the key, even when they come with a JSON
+        // error, so they count as not reaching the store rather than as a refusal.
+        if status >= 500 || status == 429 {
+            throw LicenseError.network(status == 429 ? "too many requests, try again later" : "server error \(status)")
+        }
         guard let response = try? JSONDecoder().decode(Response.self, from: data) else {
-            throw status >= 500 ? LicenseError.network("server error \(status)") : LicenseError.unexpectedResponse
+            throw LicenseError.unexpectedResponse
         }
         return response
     }

@@ -330,7 +330,38 @@ final class LicenseManagerTests: XCTestCase {
         let refused = makeManager(replies: [Self.reply("valid", ok: false, status: "disabled")], now: later)
         await refused.refreshIfNeeded()
         XCTAssertEqual(refused.entitlement, .free(.revoked))
-        XCTAssertEqual(refused.sessionLimit, 3)
+        XCTAssertNil(refused.sessionLimit, "a lapsed customer's saved sessions are never deleted")
+    }
+
+    @MainActor
+    func testCaptivePortalDoesNotRevoke() async {
+        let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
+        await makeManager(replies: [Self.reply("activated")], now: activatedAt).activate(key: "KEY-1")
+        let portal = makeManager(replies: ["<html>Sign in to the hotel Wi-Fi</html>"], now: activatedAt + 4 * 86_400)
+        await portal.refreshIfNeeded()
+        XCTAssertTrue(portal.entitlement.isPro)
+        XCTAssertEqual(portal.license?.status, .active)
+        XCTAssertNotNil(portal.lastError)
+    }
+
+    @MainActor
+    func testDeactivateForgetsALicenseTheStoreNoLongerKnows() async {
+        let now = Date(timeIntervalSince1970: 1_793_500_000)
+        let gone = #"{"deactivated": false, "error": "instance_id not found."}"#
+        let manager = makeManager(replies: [Self.reply("activated"), gone], now: now)
+        await manager.activate(key: "KEY-1")
+        await manager.deactivate()
+        XCTAssertNil(manager.license)
+        XCTAssertNil(manager.lastError)
+    }
+
+    @MainActor
+    func testUnreadableLicenseLiftsTheSessionLimit() async throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("license.json"))
+        let manager = makeManager(replies: [], now: Date())
+        XCTAssertNotNil(manager.lastError)
+        XCTAssertNil(manager.sessionLimit, "never delete sessions because the license couldn't be read")
     }
 
     @MainActor

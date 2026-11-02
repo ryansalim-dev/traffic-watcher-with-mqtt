@@ -338,7 +338,8 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                                timing: timing, mappedLocally: mappedLocally)
                         var responseHead = HTTPResponseHead(version: head.version, status: HTTPResponseStatus(statusCode: final.statusCode))
                         responseHead.headers = HTTPHeaders(final.headers.map { ($0.name, $0.value) }).removingHopByHop()
-                        responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(final.body.count))
+                        Self.setContentLength(&responseHead.headers, bodyCount: final.body.count,
+                                              status: final.statusCode, requestMethod: request.method)
                         if !head.isKeepAlive { responseHead.headers.replaceOrAdd(name: "Connection", value: "close") }
                         var responseBody = context.channel.allocator.buffer(capacity: final.body.count)
                         responseBody.writeBytes(final.body)
@@ -400,6 +401,13 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                     upstreamHead.headers.add(name: "Host", value: target.authority)
                 }
                 upstreamHead.headers.replaceOrAdd(name: "Connection", value: "close")
+                // Only ask for codings the proxy can undo, so captured bodies are readable (see ContentDecoding).
+                if let offered = upstreamHead.headers["Accept-Encoding"].first {
+                    upstreamHead.headers.remove(name: "Accept-Encoding")
+                    if let narrowed = ContentDecoding.acceptEncoding(offered) {
+                        upstreamHead.headers.add(name: "Accept-Encoding", value: narrowed)
+                    }
+                }
                 if !request.body.isEmpty || requestHeaders.contains(name: "Content-Length") || requestHeaders.contains(name: "Transfer-Encoding") {
                     upstreamHead.headers.replaceOrAdd(name: "Content-Length", value: String(request.body.count))
                 }
@@ -417,11 +425,16 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 ).whenComplete { result in
                     switch result {
                     case .success(let response):
-                        let received = HTTPResponseDraft(
+                        var received = HTTPResponseDraft(
                             statusCode: Int(response.head.status.code),
                             headers: response.head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
                             body: Array(response.body.readableBytesView)
                         )
+                        if let decoded = ContentDecoding.decode(body: received.body, headers: received.headers,
+                                                                limit: self.configuration.maximumBodySize) {
+                            received.body = decoded.body
+                            received.headers = decoded.headers
+                        }
                         deliver(received, timing: response.timing, mappedLocally: false)
                     case .failure(let error):
                         let message = String(describing: error)
@@ -431,6 +444,17 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 }
             }
         }
+    }
+
+    /// Sets Content-Length for the body actually sent. Responses that never carry a body keep what the
+    /// server said: a HEAD response's Content-Length describes the GET body, and 1xx/204 have none.
+    static func setContentLength(_ headers: inout HTTPHeaders, bodyCount: Int, status: Int, requestMethod: String) {
+        let bodiless = requestMethod.uppercased() == "HEAD" || (100..<200).contains(status) || status == 204 || status == 304
+        guard bodiless else {
+            headers.replaceOrAdd(name: "Content-Length", value: String(bodyCount))
+            return
+        }
+        if (100..<200).contains(status) || status == 204 { headers.remove(name: "Content-Length") }
     }
 
     /// Runs scripts off the event loop (they may take up to their time limit) and comes back to it.

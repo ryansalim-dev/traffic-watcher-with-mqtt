@@ -65,6 +65,9 @@ public final class LicenseManager {
     private let storage: LicenseStorage
     private let instanceName: String
     private let now: () -> Date
+    /// The saved license exists but couldn't be read (for example a keychain error). Free-tier limits
+    /// that delete data stay off until it can be read again.
+    private var loadFailed = false
 
     public init(configuration: LicenseConfiguration, storage: LicenseStorage, policy: LicensePolicy = .standard,
                 instanceName: String = LicenseManager.defaultInstanceName, now: @escaping () -> Date = Date.init) {
@@ -77,6 +80,7 @@ public final class LicenseManager {
         do {
             license = try storage.load()
         } catch {
+            loadFailed = true
             lastError = "Couldn't read the saved license: \(error)"
         }
         recompute()
@@ -102,8 +106,13 @@ public final class LicenseManager {
         providers.first { $0.id == license.provider }
     }
 
-    /// Saved sessions the free tier keeps; nil when Pro.
-    public var sessionLimit: Int? { entitlement.allows(.unlimitedSessions) ? nil : policy.freeSessionLimit }
+    /// Saved sessions the free tier keeps; nil when there is no limit. The limit deletes old sessions, so
+    /// it applies only to Macs that never had a license: a customer whose license lapsed, is offline
+    /// past the grace period, or whose license couldn't be read keeps everything they captured.
+    public var sessionLimit: Int? {
+        guard license == nil, !loadFailed else { return nil }
+        return policy.freeSessionLimit
+    }
 
     public func activate(key rawKey: String) async {
         let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -149,7 +158,12 @@ public final class LicenseManager {
         defer { isWorking = false }
         do {
             // A license from a store this build can't reach is only forgotten here.
-            try await provider(for: license)?.deactivate(license)
+            do {
+                try await provider(for: license)?.deactivate(license)
+            } catch LicenseError.rejected {
+                // The store no longer knows this activation (removed from the customer's account, or
+                // a refunded key), so there is nothing to free there; forget it here.
+            }
             try storage.clear()
             self.license = nil
             lastError = nil
@@ -184,12 +198,18 @@ public final class LicenseManager {
             lastError = nil
         } catch LicenseError.network(let message) {
             lastError = "Couldn't check the license (\(message)). Pro keeps working offline for up to \(Int(policy.offlineGracePeriod / 86_400)) days."
-        } catch {
+        } catch let error as LicenseError where error == .unexpectedResponse {
+            // Often a captive portal or a proxy's error page rather than the store: treat it as offline.
+            lastError = "Couldn't check the license (\(error)). Pro keeps working offline for up to \(Int(policy.offlineGracePeriod / 86_400)) days."
+        } catch let error as LicenseError {
             var revoked = license
             revoked.status = .disabled
             try? storage.save(revoked)
             self.license = revoked
             lastError = String(describing: error)
+        } catch {
+            // Saving the refreshed license failed (a keychain error): keep the one we have.
+            lastError = "Couldn't save the license: \(error)"
         }
         recompute()
     }
