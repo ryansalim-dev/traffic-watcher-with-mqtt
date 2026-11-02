@@ -23,6 +23,7 @@ enum StoredEvent: Codable {
         var rawBytes: Data
         var resolvedTopic: String?
         var rewrittenBy: [String]?
+        var scriptedBy: [String]?
     }
 
     init(_ event: CaptureEvent) {
@@ -39,7 +40,8 @@ enum StoredEvent: Codable {
                 version: e.event.version,
                 rawBytes: Data(e.event.frame.rawBytes),
                 resolvedTopic: e.event.resolvedTopic,
-                rewrittenBy: e.rewrittenBy
+                rewrittenBy: e.rewrittenBy,
+                scriptedBy: e.scriptedBy
             ))
         case .mqttDecodingFailed(let id, let reason): self = .mqttDecodingFailed(connectionID: id, reason: reason)
         case .tlsInterceptionFailed(let host, let port, let reason): self = .tlsInterceptionFailed(host: host, port: port, reason: reason)
@@ -66,7 +68,8 @@ enum StoredEvent: Codable {
                     frame: MQTTFrame(packet: packet, rawBytes: raw),
                     resolvedTopic: m.resolvedTopic
                 ),
-                rewrittenBy: m.rewrittenBy
+                rewrittenBy: m.rewrittenBy,
+                scriptedBy: m.scriptedBy
             ))
         case .mqttDecodingFailed(let id, let reason): return .mqttDecodingFailed(connectionID: id, reason: reason)
         case .tlsInterceptionFailed(let host, let port, let reason): return .tlsInterceptionFailed(host: host, port: port, reason: reason)

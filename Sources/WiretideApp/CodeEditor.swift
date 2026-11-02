@@ -3,11 +3,12 @@ import AppCore
 import AppKit
 import SwiftUI
 
-/// An editable code area with line numbers and, optionally, JSON syntax colors. SwiftUI's TextEditor can't
+/// An editable code area with line numbers and, optionally, JSON or JavaScript syntax colors. SwiftUI's TextEditor can't
 /// color text, so this wraps NSTextView.
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var highlightJSON = false
+    var highlightJavaScript = false
     var fontSize: CGFloat = 13
     var isEditable = true
 
@@ -59,7 +60,7 @@ struct CodeEditor: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
             context.coordinator.highlight()
-        } else if context.coordinator.highlightedAsJSON != highlightJSON {
+        } else if context.coordinator.highlightedAsJSON != highlightJSON || context.coordinator.highlightedAsJavaScript != highlightJavaScript {
             context.coordinator.highlight()
         }
         scrollView.verticalRulerView?.needsDisplay = true
@@ -69,6 +70,7 @@ struct CodeEditor: NSViewRepresentable {
         var parent: CodeEditor
         weak var textView: NSTextView?
         var highlightedAsJSON = false
+        var highlightedAsJavaScript = false
         private var observer: NSObjectProtocol?
 
         init(_ parent: CodeEditor) {
@@ -96,13 +98,15 @@ struct CodeEditor: NSViewRepresentable {
         func highlight() {
             guard let textView, let storage = textView.textStorage else { return }
             highlightedAsJSON = parent.highlightJSON
+            highlightedAsJavaScript = parent.highlightJavaScript
             let full = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
             storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: full)
             storage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: parent.fontSize, weight: .regular), range: full)
-            if parent.highlightJSON, storage.length <= CodeText.highlightLimit {
+            if parent.highlightJSON || parent.highlightJavaScript, storage.length <= CodeText.highlightLimit {
                 var location = 0
-                for token in JSONHighlighter.tokens(storage.string) {
+                let tokens = parent.highlightJavaScript ? JavaScriptHighlighter.tokens(storage.string) : JSONHighlighter.tokens(storage.string)
+                for token in tokens {
                     let length = (token.text as NSString).length
                     if let color = Theme.color(for: token.kind), location + length <= storage.length {
                         storage.addAttribute(.foregroundColor, value: NSColor(color), range: NSRange(location: location, length: length))

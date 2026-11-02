@@ -100,6 +100,9 @@ struct ContentView: View {
                     RulesToolbarButton(center: model.rewrites)
                 }
                 ToolbarItem(placement: .primaryAction) {
+                    ScriptsToolbarButton(center: model.scripts)
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button {
                         model.composer.isPresented = true
                     } label: {
@@ -160,6 +163,11 @@ struct ContentView: View {
             guard model.rewrites.isPresented else { return }
             model.rewrites.isPresented = false
             if presentsSheets { openWindow(id: RulesWindow.id) }
+        }
+        .onChange(of: model.scripts.isPresented) {
+            guard model.scripts.isPresented else { return }
+            model.scripts.isPresented = false
+            if presentsSheets { openWindow(id: ScriptsWindow.id) }
         }
         .task {
             model.sessionLimit = license.sessionLimit
@@ -732,6 +740,17 @@ struct SidebarFooter: View {
                 .buttonStyle(.plain)
                 .help("Open Map & Rewrite (⇧⌘M)")
             }
+            if model.scripts.isActive && model.scripts.enabledCount > 0 {
+                Button {
+                    model.scripts.isPresented = true
+                } label: {
+                    Label("\(model.scripts.enabledCount) script\(model.scripts.enabledCount == 1 ? "" : "s") on", systemImage: "curlybraces")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .help("Open Scripts (⇧⌘J)")
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
@@ -1106,6 +1125,7 @@ struct TimelineRowMenu: View {
                 .help("Answer this request with an editable copy of its response")
             Button("Map Remote…") { _ = model.addRule(.mapRemote, for: row) }
             Button("Rewrite…") { _ = model.addRule(.rewrite, for: row) }
+            Button("New Script for This Request…") { _ = model.addScript(for: row) }
             Divider()
             Button("Copy URL") {
                 NSPasteboard.general.clearContents()
@@ -1117,6 +1137,7 @@ struct TimelineRowMenu: View {
                     if model.prepareReplay(of: row) { model.composer.isPresented = true }
                 }
                 Button("Rewrite Messages on This Topic…") { _ = model.addMQTTRule(for: row) }
+                Button("New Script for This Topic…") { _ = model.addScript(for: row) }
             }
             if let topic = capture.event.resolvedTopic {
                 Button("Publish to \(topic)…") {

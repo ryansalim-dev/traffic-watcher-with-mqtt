@@ -86,7 +86,14 @@ struct HTTPInspector: View {
                         .font(.system(size: 12))
                 }
                 if let rules = exchange.rewrittenBy {
-                    Label(Self.rulesNote(rules, mappedLocally: exchange.mappedLocally == true), systemImage: "arrow.triangle.swap")
+                    Label(Self.rulesNote(rules, mappedLocally: exchange.mappedLocally == true && exchange.answeredByScript != true),
+                          systemImage: "arrow.triangle.swap")
+                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 12))
+                        .lineLimit(2)
+                }
+                if let scripts = exchange.scriptedBy {
+                    Label(Self.scriptsNote(scripts, answered: exchange.answeredByScript == true), systemImage: "curlybraces")
                         .foregroundStyle(Theme.accent)
                         .font(.system(size: 12))
                         .lineLimit(2)
@@ -119,6 +126,12 @@ struct HTTPInspector: View {
 }
 
 extension HTTPInspector {
+    static func scriptsNote(_ scripts: [String], answered: Bool) -> String {
+        let names = scripts.map { "“\($0)”" }.formatted(.list(type: .and))
+        if answered { return "Answered by script \(names); the server wasn't contacted" }
+        return "Changed by \(scripts.count == 1 ? "script" : "scripts") \(names); shown as sent and returned"
+    }
+
     static func rulesNote(_ rules: [String], mappedLocally: Bool) -> String {
         let names = rules.map { "“\($0)”" }.formatted(.list(type: .and))
         if mappedLocally { return "Answered by Map Local \(names); the server wasn't contacted" }
@@ -213,6 +226,13 @@ struct MQTTInspector: View {
                 if let rules = capture.rewrittenBy {
                     Label("Changed by \(rules.count == 1 ? "rule" : "rules") \(rules.map { "“\($0)”" }.formatted(.list(type: .and))); shown as forwarded",
                           systemImage: "arrow.triangle.swap")
+                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 12))
+                        .lineLimit(2)
+                }
+                if let scripts = capture.scriptedBy {
+                    Label("Changed by \(scripts.count == 1 ? "script" : "scripts") \(scripts.map { "“\($0)”" }.formatted(.list(type: .and))); shown as forwarded",
+                          systemImage: "curlybraces")
                         .foregroundStyle(Theme.accent)
                         .font(.system(size: 12))
                         .lineLimit(2)

@@ -204,7 +204,7 @@ public enum MQTTRewriter {
 }
 
 /// One direction-aware relay of an MQTT connection: splits each direction's bytes into packets,
-/// rewrites PUBLISH packets that match a rule, and records what was actually forwarded.
+/// rewrites PUBLISH packets that match a rule, runs scripts on them, and records what was actually forwarded.
 /// Confined to one event loop.
 ///
 /// Bytes are forwarded packet by packet, so a packet is held only until its last byte arrives.
@@ -214,15 +214,17 @@ final class MQTTRelay {
     private let sink: CaptureSink
     private let broker: String
     private let rules: LiveRules?
+    private let scripts: LiveScripts?
     private var session = MQTTSession()
     private var failed = false
     /// Bytes received per direction that haven't been forwarded yet (an incomplete packet).
     private var pending: [MQTTDirection: [UInt8]] = [:]
 
-    init(sink: CaptureSink, broker: String, rules: LiveRules?) {
+    init(sink: CaptureSink, broker: String, rules: LiveRules?, scripts: LiveScripts? = nil) {
         self.sink = sink
         self.broker = broker
         self.rules = rules
+        self.scripts = scripts
     }
 
     /// Takes bytes read from one side and returns the bytes to write to the other.
@@ -245,21 +247,48 @@ final class MQTTRelay {
             pending[direction] = unsent
         }
         let active = rules?.mqtt ?? []
+        let scripting = scripts?.snapshot
         let now = Date()
         var output: [UInt8] = []
         output.reserveCapacity(consumed)
         for var event in events {
             var applied: [String]?
-            if !active.isEmpty, case .publish(let publish) = event.packet,
-               let rewritten = MQTTRewriter.rewrite(publish, resolvedTopic: event.resolvedTopic ?? publish.topic,
-                                                    direction: direction, rules: active),
-               let bytes = try? MQTTPacketEncoder.encode(.publish(rewritten.publish), version: event.version) {
-                event.frame = MQTTFrame(packet: .publish(rewritten.publish), rawBytes: bytes)
-                event.resolvedTopic = rewritten.topic
-                applied = rewritten.applied
+            var scripted: [String]?
+            if case .publish(let original) = event.packet {
+                var publish = original
+                let originalTopic = event.resolvedTopic ?? original.topic
+                var topic = originalTopic
+                if !active.isEmpty,
+                   let rewritten = MQTTRewriter.rewrite(publish, resolvedTopic: topic, direction: direction, rules: active) {
+                    publish = rewritten.publish
+                    topic = rewritten.topic
+                    applied = rewritten.applied
+                }
+                // Scripts match the topic as the rules left it, and see the packet after the rules.
+                if let scripting, case let matched = scripting.scripts(topic: topic, direction: direction), !matched.isEmpty {
+                    let result = ScriptRunner.runPublish(publish, resolvedTopic: topic, direction: direction, broker: broker,
+                                                         clientID: session.clientIdentifier, scripts: matched, engine: scripting.engine)
+                    scripts?.log(result.logs)
+                    if !result.applied.isEmpty {
+                        publish = result.publish
+                        topic = result.topic
+                        scripted = result.applied
+                    }
+                }
+                if publish != original || topic != originalTopic {
+                    if let bytes = try? MQTTPacketEncoder.encode(.publish(publish), version: event.version) {
+                        event.frame = MQTTFrame(packet: .publish(publish), rawBytes: bytes)
+                        event.resolvedTopic = topic
+                    } else {
+                        // The change couldn't be encoded, so the original is what goes on.
+                        applied = nil
+                        scripted = nil
+                    }
+                }
             }
             output += event.frame.rawBytes
-            sink.record(.mqtt(MQTTCaptureEvent(connectionID: connectionID, timestamp: now, broker: broker, event: event, rewrittenBy: applied)))
+            sink.record(.mqtt(MQTTCaptureEvent(connectionID: connectionID, timestamp: now, broker: broker, event: event,
+                                               rewrittenBy: applied, scriptedBy: scripted)))
         }
         return output
     }

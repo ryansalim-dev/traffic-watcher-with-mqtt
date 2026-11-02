@@ -57,6 +57,13 @@ struct WiretideApp: App {
         }
         .windowResizability(.contentMinSize)
 
+        Window("Scripts", id: ScriptsWindow.id) {
+            if let model = setup.model {
+                ScriptsWindow(model: model)
+            }
+        }
+        .windowResizability(.contentMinSize)
+
         Settings {
             if case .ready(let model, let storage, let license, let helper) = setup {
                 SettingsView(model: model, certificates: storage, license: license, helper: helper)
@@ -74,6 +81,7 @@ enum AppSetup {
     private static let breakpointRulesKey = "breakpointRules"
     private static let publishTargetKey = "publishTarget"
     private static let rewriteRulesKey = "rewriteRules"
+    private static let scriptsKey = "userScripts"
 
     var model: CaptureViewModel? {
         if case .ready(let model, _, _, _) = self { model } else { nil }
@@ -110,6 +118,11 @@ enum AppSetup {
             let rewrites = RewriteCenter(settings: rewriteSettings) { settings in
                 if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: rewriteRulesKey) }
             }
+            let scriptSettings = defaults.data(forKey: scriptsKey).flatMap { try? JSONDecoder().decode(ScriptSettings.self, from: $0) }
+                ?? ScriptSettings()
+            let scripts = ScriptCenter(settings: scriptSettings) { settings in
+                if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: scriptsKey) }
+            }
             let publishTarget = defaults.data(forKey: publishTargetKey).flatMap { try? JSONDecoder().decode(MQTTBrokerTarget.self, from: $0) }
                 ?? MQTTBrokerTarget(host: configuration.forwarders.first?.brokerHost ?? "localhost",
                                     port: configuration.forwarders.first?.brokerPort,
@@ -132,7 +145,8 @@ enum AppSetup {
                 },
                 breakpoints: breakpoints,
                 composer: composer,
-                rewrites: rewrites
+                rewrites: rewrites,
+                scripts: scripts
             )
             let license = LicenseManager(
                 configuration: LicenseConfiguration(infoDictionary: Bundle.main.infoDictionary ?? [:]),
@@ -195,6 +209,15 @@ struct CaptureCommands: Commands {
 
             Button(model?.rewrites.isEnabled == true ? "Turn Map & Rewrite Off" : "Turn Map & Rewrite On") {
                 model?.rewrites.isEnabled.toggle()
+            }
+            .disabled(model == nil)
+
+            Button("Scripts…") { model?.scripts.isPresented = true }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+                .disabled(model == nil)
+
+            Button(model?.scripts.isEnabled == true ? "Turn Scripts Off" : "Turn Scripts On") {
+                model?.scripts.isEnabled.toggle()
             }
             .disabled(model == nil)
 
