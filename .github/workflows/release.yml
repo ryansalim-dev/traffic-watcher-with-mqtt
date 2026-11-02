@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v1.0.0 to build, sign, notarize and publish a release, then add it to the
-# Sparkle appcast on GitHub Pages (https://<owner>.github.io/<repo>/appcast.xml).
+# Sparkle appcast on GitHub Pages, served at https://wiretide.app/appcast.xml (site/CNAME).
 #
 # Repository secrets:
 #   DEVELOPER_ID_CERT_P12     base64 of the "Developer ID Application" certificate + key (.p12)
@@ -30,7 +30,7 @@ jobs:
     runs-on: macos-15
     env:
       VERSION: ${{ github.ref_name }}
-      FEED_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
+      FEED_URL: https://wiretide.app/appcast.xml
     steps:
       - uses: actions/checkout@v4
         with:
