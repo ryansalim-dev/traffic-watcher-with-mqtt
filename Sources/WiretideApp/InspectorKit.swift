@@ -14,6 +14,8 @@ extension Theme {
         case .string: post
         case .number: put
         case .literal: mqtt
+        case .keyword: mqtt
+        case .comment: neutral
         }
     }
 }

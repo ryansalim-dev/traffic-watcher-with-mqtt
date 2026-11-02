@@ -33,14 +33,19 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     /// Names of the map and rewrite rules that changed this exchange; the request and response are
     /// what was actually sent and returned. Nil when no rule applied.
     public var rewrittenBy: [String]?
-    /// True when a Map Local rule answered and the server was never contacted.
+    /// True when a Map Local rule or a script answered and the server was never contacted.
     public var mappedLocally: Bool?
+    /// Names of the scripts that changed this exchange (Pro). Nil when no script changed it.
+    public var scriptedBy: [String]?
+    /// True when a script's `respond(...)` answered, rather than Map Local.
+    public var answeredByScript: Bool?
 
     public init(id: UUID = UUID(), startedAt: Date, duration: TimeInterval, method: String, url: String,
                 requestHeaders: [CapturedHeader], requestBody: [UInt8], statusCode: Int?,
                 responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil,
                 breakpoint: BreakpointStages? = nil, timing: HTTPTiming? = nil,
-                rewrittenBy: [String]? = nil, mappedLocally: Bool? = nil) {
+                rewrittenBy: [String]? = nil, mappedLocally: Bool? = nil,
+                scriptedBy: [String]? = nil, answeredByScript: Bool? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.duration = duration
@@ -56,6 +61,8 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
         self.timing = timing
         self.rewrittenBy = rewrittenBy
         self.mappedLocally = mappedLocally
+        self.scriptedBy = scriptedBy
+        self.answeredByScript = answeredByScript
     }
 }
 
@@ -82,13 +89,17 @@ public struct MQTTCaptureEvent: Equatable, Sendable {
     public var event: MQTTSessionEvent
     /// Names of the rewrite rules that changed this PUBLISH; the packet is what was forwarded.
     public var rewrittenBy: [String]?
+    /// Names of the scripts that changed this PUBLISH.
+    public var scriptedBy: [String]?
 
-    public init(connectionID: UUID, timestamp: Date, broker: String, event: MQTTSessionEvent, rewrittenBy: [String]? = nil) {
+    public init(connectionID: UUID, timestamp: Date, broker: String, event: MQTTSessionEvent, rewrittenBy: [String]? = nil,
+                scriptedBy: [String]? = nil) {
         self.connectionID = connectionID
         self.timestamp = timestamp
         self.broker = broker
         self.event = event
         self.rewrittenBy = rewrittenBy
+        self.scriptedBy = scriptedBy
     }
 }
 

@@ -37,13 +37,17 @@ public final class MQTTForwarder: @unchecked Sendable {
     private let brokerPort: Int
     private let tls: TLS?
     private let rules: LiveRules?
+    private let scripts: LiveScripts?
     private var channel: Channel?
 
-    /// - Parameter rules: PUBLISH rewrite rules, read for every packet. Nil relays packets untouched.
+    /// - Parameters:
+    ///   - rules: PUBLISH rewrite rules, read for every packet. Nil relays packets untouched.
+    ///   - scripts: scripts with `onPublish`, run after the rules. Nil runs none.
     public init(group: EventLoopGroup, sink: CaptureSink, brokerHost: String, brokerPort: Int? = nil, tls: TLS? = nil,
-                rules: LiveRules? = nil) {
+                rules: LiveRules? = nil, scripts: LiveScripts? = nil) {
         self.group = group
         self.rules = rules
+        self.scripts = scripts
         self.sink = sink
         self.brokerHost = brokerHost
         self.brokerPort = brokerPort ?? (tls == nil ? 1883 : 8883)
@@ -57,6 +61,7 @@ public final class MQTTForwarder: @unchecked Sendable {
         let brokerHost = self.brokerHost
         let brokerPort = self.brokerPort
         let rules = self.rules
+        let scripts = self.scripts
         var serverTLS: NIOSSLContext?
         var clientTLS: NIOSSLContext?
         if let tls {
@@ -81,7 +86,7 @@ public final class MQTTForwarder: @unchecked Sendable {
                     }
                     .connect(host: brokerHost, port: brokerPort)
                     .flatMapThrowing { broker in
-                        let relay = MQTTRelay(sink: sink, broker: "\(brokerHost):\(brokerPort)", rules: rules)
+                        let relay = MQTTRelay(sink: sink, broker: "\(brokerHost):\(brokerPort)", rules: rules, scripts: scripts)
                         let allocator = client.allocator
                         let (clientSide, brokerSide) = GlueHandler.pair(
                             transformA: { allocator.buffer(bytes: relay.relay(Array($0.readableBytesView), from: .clientToBroker)) },

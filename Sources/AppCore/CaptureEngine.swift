@@ -112,6 +112,7 @@ public final class CaptureEngine: @unchecked Sendable {
     private var _runningConfiguration: EngineConfiguration?
     private var _breakpoints: HTTPBreakpointHandler?
     private var _rules: LiveRules?
+    private var _scripts: LiveScripts?
 
     public init(authority: CertificateAuthority, threads: Int = System.coreCount) {
         self.authority = authority
@@ -141,6 +142,13 @@ public final class CaptureEngine: @unchecked Sendable {
         set { lock.withLock { _rules = newValue } }
     }
 
+    /// User scripts, handed to the proxy and forwarders when capture starts. Like rules, they are
+    /// read for every request and packet.
+    public var scripts: LiveScripts? {
+        get { lock.withLock { _scripts } }
+        set { lock.withLock { _scripts = newValue } }
+    }
+
     /// A publisher on this engine's event loops whose traffic lands in the capture stream.
     public func makePublisher() -> MQTTPublisher {
         MQTTPublisher(group: group, sink: sink)
@@ -159,6 +167,8 @@ public final class CaptureEngine: @unchecked Sendable {
         proxyConfiguration.breakpoints = breakpoints
         let rules = self.rules
         proxyConfiguration.rules = rules
+        let scripts = self.scripts
+        proxyConfiguration.scripts = scripts
         let proxy = HTTPProxyServer(group: group, sink: sink, configuration: proxyConfiguration)
         let port = try await proxy.start(host: configuration.listenHost, port: configuration.proxyPort)
 
@@ -171,7 +181,8 @@ public final class CaptureEngine: @unchecked Sendable {
                     brokerHost: forwarder.brokerHost,
                     brokerPort: forwarder.brokerPort,
                     tls: forwarder.useTLS ? .init(interceptor: interceptor) : nil,
-                    rules: rules
+                    rules: rules,
+                    scripts: scripts
                 )
                 try await instance.start(host: configuration.listenHost, port: forwarder.listenPort)
                 started[forwarder.id] = instance

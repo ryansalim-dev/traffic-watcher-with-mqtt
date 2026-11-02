@@ -3,7 +3,7 @@ import ProxyCore
 
 /// A run of characters in a code view, tagged with what it is so it can be colored.
 public struct CodeToken: Equatable, Sendable {
-    public enum Kind: Equatable, Sendable { case plain, key, string, number, literal }
+    public enum Kind: Equatable, Sendable { case plain, key, string, number, literal, keyword, comment }
 
     public var kind: Kind
     public var text: String
@@ -84,6 +84,104 @@ public enum JSONHighlighter {
             }
         }
         return lines
+    }
+}
+
+/// Splits JavaScript into colorable tokens for the script editor: comments, strings (including
+/// template literals), numbers, keywords, literals, and the names scripts use (`onRequest`,
+/// `respond`, `console`…) as keys. Like the JSON highlighter it never fails, and the tokens'
+/// text joins back into the source exactly.
+public enum JavaScriptHighlighter {
+    static let keywords: Set<String> = [
+        "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "export",
+        "extends", "finally", "for", "function", "if", "import", "in", "instanceof", "let", "new", "of", "return",
+        "switch", "this", "throw", "try", "typeof", "var", "void", "while", "with", "yield",
+    ]
+    static let literals: Set<String> = ["true", "false", "null", "undefined", "NaN", "Infinity"]
+    static let names: Set<String> = ["onRequest", "onResponse", "onPublish", "respond", "console", "JSON", "Math", "Date"]
+
+    public static func tokens(_ source: String) -> [CodeToken] {
+        let chars = Array(source.unicodeScalars)
+        var tokens: [CodeToken] = []
+        var plain = String.UnicodeScalarView()
+        func flushPlain() {
+            if !plain.isEmpty { tokens.append(CodeToken(.plain, String(plain))); plain = .init() }
+        }
+        func emit(_ kind: CodeToken.Kind, _ range: Range<Int>) {
+            flushPlain()
+            var text = String.UnicodeScalarView()
+            text.append(contentsOf: chars[range])
+            tokens.append(CodeToken(kind, String(text)))
+        }
+        func isIdentifierStart(_ c: Unicode.Scalar) -> Bool { c == "_" || c == "$" || c.properties.isAlphabetic }
+        func isIdentifierPart(_ c: Unicode.Scalar) -> Bool { isIdentifierStart(c) || ("0"..."9").contains(c) }
+
+        var index = 0
+        while index < chars.count {
+            let c = chars[index]
+            let next = index + 1 < chars.count ? chars[index + 1] : nil
+            if c == "/" && next == "/" {
+                var end = index
+                while end < chars.count, chars[end] != "\n" { end += 1 }
+                emit(.comment, index..<end)
+                index = end
+            } else if c == "/" && next == "*" {
+                var end = index + 2
+                while end < chars.count, !(chars[end] == "*" && end + 1 < chars.count && chars[end + 1] == "/") { end += 1 }
+                end = min(end + 2, chars.count)
+                emit(.comment, index..<end)
+                index = end
+            } else if c == "\"" || c == "'" || c == "`" {
+                var end = index + 1
+                var escaped = false
+                while end < chars.count {
+                    let d = chars[end]
+                    if escaped {
+                        escaped = false
+                    } else if d == "\\" {
+                        escaped = true
+                    } else if d == c {
+                        end += 1
+                        break
+                    } else if d == "\n" && c != "`" {
+                        break
+                    }
+                    end += 1
+                }
+                emit(.string, index..<min(end, chars.count))
+                index = min(end, chars.count)
+            } else if ("0"..."9").contains(c) && (index == 0 || !isIdentifierPart(chars[index - 1])) {
+                var end = index + 1
+                while end < chars.count, chars[end].properties.isAlphabetic || ("0"..."9").contains(chars[end]) || chars[end] == "." || chars[end] == "_" {
+                    end += 1
+                }
+                emit(.number, index..<end)
+                index = end
+            } else if isIdentifierStart(c) && (index == 0 || !isIdentifierPart(chars[index - 1])) {
+                var end = index + 1
+                while end < chars.count, isIdentifierPart(chars[end]) { end += 1 }
+                var word = String.UnicodeScalarView()
+                word.append(contentsOf: chars[index..<end])
+                let text = String(word)
+                // A name after a dot is a property (`request.headers`), never a keyword.
+                let afterDot = index > 0 && chars[index - 1] == "."
+                if !afterDot && keywords.contains(text) {
+                    emit(.keyword, index..<end)
+                } else if !afterDot && literals.contains(text) {
+                    emit(.literal, index..<end)
+                } else if !afterDot && names.contains(text) {
+                    emit(.key, index..<end)
+                } else {
+                    plain.append(contentsOf: chars[index..<end])
+                }
+                index = end
+            } else {
+                plain.append(c)
+                index += 1
+            }
+        }
+        flushPlain()
+        return tokens
     }
 }
 

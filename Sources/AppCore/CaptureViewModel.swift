@@ -174,6 +174,8 @@ public final class CaptureViewModel {
     public let composer: MQTTComposer
     /// Map Local, Map Remote and Rewrite rules (Pro).
     public let rewrites: RewriteCenter
+    /// User scripts (Pro).
+    public let scripts: ScriptCenter
     private let engine: CaptureEngine?
     private let saveConfiguration: ((EngineConfiguration) -> Void)?
     private let systemProxy: SystemProxyControlling?
@@ -187,7 +189,8 @@ public final class CaptureViewModel {
                 saveConfiguration: ((EngineConfiguration) -> Void)? = nil,
                 breakpoints: BreakpointCenter? = nil,
                 composer: MQTTComposer? = nil,
-                rewrites: RewriteCenter? = nil) {
+                rewrites: RewriteCenter? = nil,
+                scripts: ScriptCenter? = nil) {
         self.store = store
         self.engine = engine
         let breakpoints = breakpoints ?? BreakpointCenter()
@@ -197,6 +200,9 @@ public final class CaptureViewModel {
         let rewrites = rewrites ?? RewriteCenter()
         self.rewrites = rewrites
         engine?.rules = rewrites.rules
+        let scripts = scripts ?? ScriptCenter()
+        self.scripts = scripts
+        engine?.scripts = scripts.live
         self.systemProxy = systemProxy
         self.configuration = configuration
         self.saveConfiguration = saveConfiguration
@@ -221,6 +227,24 @@ public final class CaptureViewModel {
         breakpoints.isAllowed = entitlement.allows(.breakpoints)
         composer.isAllowed = entitlement.allows(.mqttPublish)
         rewrites.isAllowed = entitlement.allows(.mapRewrite)
+        scripts.isAllowed = entitlement.allows(.scripting)
+    }
+
+    /// Starts a script from an HTTP exchange or a PUBLISH row and opens the scripts window on it.
+    @discardableResult
+    public func addScript(for row: TrafficRow) -> UserScript? {
+        let script: UserScript
+        switch row.event {
+        case .httpExchange(let exchange):
+            script = scripts.addScript(for: exchange)
+        case .mqtt(let capture):
+            guard case .publish = capture.event.packet, let topic = capture.event.resolvedTopic else { return nil }
+            script = scripts.addScript(forTopic: topic)
+        default:
+            return nil
+        }
+        scripts.isPresented = true
+        return script
     }
 
     /// Starts a map or rewrite rule from an HTTP row and opens the rules window on it.

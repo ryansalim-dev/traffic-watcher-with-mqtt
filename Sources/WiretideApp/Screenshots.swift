@@ -129,6 +129,7 @@ enum Screenshots {
 
         try await shootProTools(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper, into: directory)
         try await shootRules(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
+        try await shootScripts(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
         await model.stopCapture()
     }
 
@@ -340,6 +341,97 @@ enum Screenshots {
             try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: size, dark: false,
                             name: "27-mqtt-rewritten", into: directory)
         }
+    }
+
+    /// The scripts window: empty and locked, HTTP and MQTT scripts after a test run, a syntax error, and the inspector note.
+    private static func shootScripts(model: CaptureViewModel, storage: CertificateStorage, freeLicense: LicenseManager,
+                                     proLicense: LicenseManager, into directory: URL) async throws {
+        let center = model.scripts
+        let windowSize = NSSize(width: 1040, height: 720)
+        center.scripts = []
+        center.selection = nil
+        center.clearLog()
+        model.apply(freeLicense.entitlement)
+        try await shoot(ScriptsWindow(model: model), size: windowSize, dark: false, name: "28-scripts-empty-free", into: directory,
+                        title: "Scripts")
+
+        model.apply(proLicense.entitlement)
+        center.addScript(.addHeader)
+        center.scripts[0].name = "Sign API requests"
+        let devices = center.addScript(.editJSONResponse, urlPattern: "api.example.com/v2/devices*", method: "GET", name: "All devices online")
+        if let index = center.scripts.firstIndex(where: { $0.id == devices.id }) {
+            center.scripts[index].source = """
+            // Pretend every device is reachable, to test the app's online state.
+            function onResponse(request, response) {
+              if (!response.json || !response.json.devices) return;
+              let changed = 0;
+              for (const device of response.json.devices) {
+                if (!device.online) changed += 1;
+                device.online = true;
+              }
+              response.headers["X-Wiretide-Script"] = "devices-online";
+              console.log("Marked", changed, "of", response.json.devices.length, "devices online for", request.path);
+              return response;
+            }
+            """
+        }
+        let fahrenheit = center.addScript(.mqttPayload, topicFilter: "home/+/temperature", name: "Add Fahrenheit")
+        if let index = center.scripts.firstIndex(where: { $0.id == fahrenheit.id }) {
+            center.scripts[index].direction = .brokerToClient
+            center.scripts[index].source = """
+            // Add a Fahrenheit reading next to Celsius on every temperature message.
+            function onPublish(message) {
+              if (message.json && typeof message.json.celsius === "number") {
+                message.json.fahrenheit = Math.round((message.json.celsius * 9 / 5 + 32) * 10) / 10;
+                console.log(message.topic, message.json.celsius + "°C →", message.json.fahrenheit + "°F");
+              }
+              return message;
+            }
+            """
+        }
+        let mock = center.addScript(.mockResponse, name: "Block deletes")
+        if let index = center.scripts.firstIndex(where: { $0.id == mock.id }) { center.scripts[index].isEnabled = false }
+
+        // Try the HTTP script on the captured device list, as "Run on Latest Match" would.
+        if let row = model.rows.first(where: { row in
+            if case .httpExchange(let e) = row.event { e.url.hasPrefix("https://api.example.com/v2/devices?limit") } else { false }
+        }), let script = center.scripts.first(where: { $0.id == devices.id }) {
+            await center.test(script, on: row)
+        }
+        center.selection = devices.id
+        try await shoot(ScriptsWindow(model: model), size: windowSize, dark: false, name: "29-scripts-http", into: directory, title: "Scripts")
+        try await shoot(ScriptsWindow(model: model), size: windowSize, dark: true, name: "29b-scripts-http-dark", into: directory, title: "Scripts")
+
+        if let row = model.rows.last(where: { $0.kind == .mqtt && $0.summary.contains("home/kitchen/temperature") }),
+           let script = center.scripts.first(where: { $0.id == fahrenheit.id }) {
+            await center.test(script, on: row)
+        }
+        center.selection = fahrenheit.id
+        try await shoot(ScriptsWindow(model: model), size: windowSize, dark: true, name: "30-scripts-mqtt-dark", into: directory, title: "Scripts")
+
+        // A half-typed edit: the syntax check flags the line before anything runs.
+        if let index = center.scripts.firstIndex(where: { $0.id == mock.id }) {
+            center.scripts[index].isEnabled = true
+            center.scripts[index].source = center.scripts[index].source.replacingOccurrences(of: "return respond(403, \"Deleting is disabled while testing\");",
+                                                                                              with: "return respond(403, \"Deleting is disabled\";")
+        }
+        center.selection = mock.id
+        try await shoot(ScriptsWindow(model: model), size: windowSize, dark: false, name: "31-scripts-syntax-error", into: directory, title: "Scripts")
+
+        // The main window: an exchange a script changed, the toolbar count and the sidebar line.
+        let scripted = HTTPExchange(
+            startedAt: Date(), duration: 0.091, method: "GET", url: "https://api.example.com/v2/devices?limit=20",
+            requestHeaders: [CapturedHeader(name: "Accept", value: "application/json"), CapturedHeader(name: "X-Debug", value: "1")],
+            requestBody: [], statusCode: 200,
+            responseHeaders: [CapturedHeader(name: "Content-Type", value: "application/json"),
+                              CapturedHeader(name: "X-Wiretide-Script", value: "devices-online")],
+            responseBody: Array(#"{"devices":[{"firmware":"4.2.1","id":"thermo-01","name":"Kitchen","online":true},{"id":"plug-07","name":"Desk lamp","online":true}],"next":null}"#.utf8),
+            scriptedBy: ["Sign API requests", "All devices online"])
+        model.ingest(.httpExchange(scripted))
+        model.section = .http
+        model.selection = model.rows.last?.id
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: NSSize(width: 1440, height: 860), dark: true,
+                        name: "32-timeline-scripted-dark", into: directory)
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL,
