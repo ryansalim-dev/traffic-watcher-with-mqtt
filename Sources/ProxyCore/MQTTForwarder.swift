@@ -91,6 +91,7 @@ public final class MQTTForwarder: @unchecked Sendable {
                         let (clientSide, brokerSide) = GlueHandler.pair(
                             transformA: { allocator.buffer(bytes: relay.relay(Array($0.readableBytesView), from: .clientToBroker)) },
                             transformB: { allocator.buffer(bytes: relay.relay(Array($0.readableBytesView), from: .brokerToClient)) },
+                            offload: scripts.map { scripts in GlueHandler.Offload { scripts.snapshot?.handlesPublish ?? false } },
                             onClose: { broker.close(promise: nil) }
                         )
                         if let serverTLS {

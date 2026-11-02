@@ -10,28 +10,31 @@ import SystemConfiguration
 
 let backupURL = URL(fileURLWithPath: "/Library/Application Support/Wiretide/SystemProxyBackup.plist")
 
-enum ProxyStore {
-    /// Applies `change` to the Proxies protocol of every enabled network service, in one commit.
-    /// Returns the service IDs it changed.
-    static func update(_ change: (_ serviceID: String, _ proxies: [String: Any]) -> [String: Any]?) throws -> [String] {
+/// The SystemConfiguration preferences, locked for the length of a transaction.
+struct SystemProxyStore: ProxySettingsStore {
+    func transaction(_ change: ([String: [String: Any]]) throws -> [String: [String: Any]]) throws {
         guard let prefs = SCPreferencesCreate(nil, "WiretideHelper" as CFString, nil) else { throw HelperError.systemConfiguration("open") }
         guard SCPreferencesLock(prefs, true) else { throw HelperError.systemConfiguration("lock") }
         defer { SCPreferencesUnlock(prefs) }
 
-        var changed: [String] = []
+        var protocols: [String: SCNetworkProtocol] = [:]
+        var current: [String: [String: Any]] = [:]
         for service in (SCNetworkServiceCopyAll(prefs) as? [SCNetworkService]) ?? [] where SCNetworkServiceGetEnabled(service) {
             guard let id = SCNetworkServiceGetServiceID(service) as String?,
                   let proxiesProtocol = SCNetworkServiceCopyProtocol(service, kSCNetworkProtocolTypeProxies) else { continue }
-            let current = (SCNetworkProtocolGetConfiguration(proxiesProtocol) as? [String: Any]) ?? [:]
-            guard let updated = change(id, current) else { continue }
-            guard SCNetworkProtocolSetConfiguration(proxiesProtocol, updated as CFDictionary) else {
+            protocols[id] = proxiesProtocol
+            current[id] = (SCNetworkProtocolGetConfiguration(proxiesProtocol) as? [String: Any]) ?? [:]
+        }
+        let updates = try change(current)
+        guard !updates.isEmpty else { return }
+        for (id, proxies) in updates {
+            guard let proxiesProtocol = protocols[id] else { continue }
+            guard SCNetworkProtocolSetConfiguration(proxiesProtocol, proxies as CFDictionary) else {
                 throw HelperError.systemConfiguration("set \(id)")
             }
-            changed.append(id)
         }
         guard SCPreferencesCommitChanges(prefs) else { throw HelperError.systemConfiguration("commit") }
         guard SCPreferencesApplyChanges(prefs) else { throw HelperError.systemConfiguration("apply") }
-        return changed
     }
 }
 
@@ -53,13 +56,7 @@ final class ProxyManager: @unchecked Sendable {
     func enable(host: String, port: Int, bypass: [String], for connection: ObjectIdentifier) -> String? {
         queue.sync {
             do {
-                // Keep the oldest backup: if a previous session never restored, its backup holds the user's real settings.
-                var backup = SystemProxyBackup.load(from: backupURL) ?? SystemProxyBackup(services: [:])
-                _ = try ProxyStore.update { id, proxies in
-                    if backup.services[id] == nil { backup.services[id] = SystemProxyPlan.backup(of: proxies) }
-                    return SystemProxyPlan.enabling(proxies, host: host, port: port, bypass: bypass)
-                }
-                try backup.save(to: backupURL)
+                try ProxySwitcher.enable(host: host, port: port, bypass: bypass, store: SystemProxyStore(), backupURL: backupURL)
                 owner = connection
                 return nil
             } catch {
@@ -81,15 +78,8 @@ final class ProxyManager: @unchecked Sendable {
     }
 
     private func restoreLocked() -> String? {
-        guard let backup = SystemProxyBackup.load(from: backupURL) else {
-            owner = nil
-            return nil
-        }
         do {
-            _ = try ProxyStore.update { id, proxies in
-                backup.services[id].map { SystemProxyPlan.restoring(proxies, from: $0) }
-            }
-            try? FileManager.default.removeItem(at: backupURL)
+            try ProxySwitcher.restore(store: SystemProxyStore(), backupURL: backupURL)
             owner = nil
             return nil
         } catch {

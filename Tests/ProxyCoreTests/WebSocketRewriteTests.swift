@@ -203,6 +203,42 @@ final class WebSocketRewriteProxyTests: XCTestCase {
         try await upstream.close()
     }
 
+    /// With an onPublish script the socket's frames are handled off the event loop, handshake included.
+    func testProxyRunsPublishScriptsInsideWebSocketFrames() async throws {
+        let server = FakeWebSocketServerHandler(subprotocol: "mqtt")
+        let upstream = try await startServer(group: group) { channel in
+            channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(server) }
+        }
+        let port = upstream.localAddress!.port!
+        let log = CaptureLog()
+        let engine = StubEngine { _, _, _ in StubEngine.json(["message": ["payload": ["text": "99"]]]) }
+        let scripts = LiveScripts { _ in engine }
+        scripts.update([UserScript(name: "Fake reading", source: "function onPublish(m) {}", topicFilter: "sensors/#")])
+        var configuration = HTTPProxyServer.Configuration()
+        configuration.scripts = scripts
+        let proxy = HTTPProxyServer(group: group, sink: log, configuration: configuration)
+        let proxyPort = try await proxy.start()
+
+        let client = try await RawClient.connect(port: proxyPort, group: group)
+        try await client.send("GET http://127.0.0.1:\(port)/mqtt HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\nUpgrade: websocket\r\n" +
+            "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: mqtt\r\n\r\n")
+        await eventually("101 relayed") { client.text.contains("\r\n\r\n") }
+
+        let connect: [UInt8] = [0x10, 0x10, 0x00, 0x04] + Array("MQTT".utf8) + [0x04, 0x02, 0x00, 0x3C, 0x00, 0x04] + Array("wsid".utf8)
+        let original = try MQTTPacketEncoder.encode(.publish(MQTTPublish(topic: "sensors/t", payload: Array("21".utf8))), version: .v3_1_1)
+        try await client.send(wsFrame(0x2, connect, mask: [1, 2, 3, 4]) + wsFrame(0x2, original, mask: [5, 6, 7, 8]))
+
+        let expected = try MQTTPacketEncoder.encode(.publish(MQTTPublish(topic: "sensors/t", payload: Array("99".utf8))), version: .v3_1_1)
+        await eventually("scripted publish reached the server") { server.binaryPayloads.contains(expected) }
+        XCTAssertEqual(server.binaryPayloads, [connect, expected])
+        await eventually("events") { self.publishes(log).count == 1 }
+        XCTAssertEqual(publishes(log).first?.scriptedBy, ["Fake reading"])
+
+        try? await client.channel.close()
+        try await proxy.stop()
+        try await upstream.close()
+    }
+
     private func publishes(_ log: CaptureLog) -> [MQTTCaptureEvent] {
         log.events.compactMap { if case .mqtt(let e) = $0, e.event.packet.type == .publish { e } else { nil } }
     }

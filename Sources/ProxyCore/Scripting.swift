@@ -161,6 +161,11 @@ public final class LiveScripts: @unchecked Sendable {
             scripts.filter { hooks[$0.id]?.contains(hook) == true && $0.matches(method: method, url: url) }
         }
 
+        /// True when some script defines `onPublish`.
+        public var handlesPublish: Bool {
+            scripts.contains { hooks[$0.id]?.contains(.publish) == true }
+        }
+
         /// Scripts that match the PUBLISH and define `onPublish`, in order.
         public func scripts(topic: String, direction: MQTTDirection) -> [UserScript] {
             scripts.filter { hooks[$0.id]?.contains(.publish) == true && $0.matches(topic: topic, direction: direction) }

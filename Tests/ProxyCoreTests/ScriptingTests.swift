@@ -405,3 +405,47 @@ final class JavaScriptEngineTests: XCTestCase {
     }
 }
 #endif
+
+final class MQTTScriptOffloadTests: XCTestCase {
+    private func publish(_ topic: String, _ payload: String) -> [UInt8] {
+        try! MQTTPacketEncoder.encode(.publish(MQTTPublish(topic: topic, payload: Array(payload.utf8))), version: .v3_1_1)
+    }
+
+    /// A slow onPublish script holds up only its own connection, not others on the same event loop,
+    /// and its connection still sees every packet in order.
+    func testSlowScriptsDontStallOtherConnections() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let echo = try await startServer(group: group) { channel in
+            channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(EchoHandler()) }
+        }
+        let engine = StubEngine { _, _, _ in
+            Thread.sleep(forTimeInterval: 0.3)
+            return StubEngine.json(["message": ["payload": ["text": "slowed"]]])
+        }
+        let scripts = LiveScripts { _ in engine }
+        scripts.update([UserScript(name: "Slow", source: "function onPublish(m) {}", topicFilter: "slow/#")])
+        let forwarder = MQTTForwarder(group: group, sink: CaptureLog(), brokerHost: "127.0.0.1",
+                                      brokerPort: echo.localAddress!.port!, scripts: scripts)
+        let port = try await forwarder.start()
+
+        let slow = try await RawClient.connect(port: port, group: group)
+        let fast = try await RawClient.connect(port: port, group: group)
+        // Three slow packets (0.9s of script time) then one that no script matches, on one connection.
+        try await slow.send(publish("slow/a", "1") + publish("slow/b", "2") + publish("slow/c", "3") + publish("other", "4"))
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let started = Date()
+        try await fast.send(publish("other", "fast"))
+        await eventually("other connection relayed") { fast.bytes == self.publish("other", "fast") }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.6, "the event loop was free while scripts ran")
+        XCTAssertTrue(slow.bytes.isEmpty, "the scripted connection was still waiting")
+
+        let expected = publish("slow/a", "slowed") + publish("slow/b", "slowed") + publish("slow/c", "slowed") + publish("other", "4")
+        await eventually("scripted packets relayed in order") { slow.bytes == expected }
+
+        try await slow.channel.close()
+        try await fast.channel.close()
+        try await forwarder.stop()
+        try await echo.close()
+        try await group.shutdownGracefully()
+    }
+}
