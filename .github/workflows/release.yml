@@ -1,7 +1,11 @@
 name: Release
 
 # Push a tag like v1.0.0 to build, sign, notarize and publish a release, then add it to the
-# Sparkle appcast on GitHub Pages, served at https://wiretide.app/appcast.xml (site/CNAME).
+# Sparkle appcast served at https://wiretide.app/appcast.xml (Cloudflare Pages).
+#
+# The code repo can be private: the zip is published as a release of the public releases repo
+# (RELEASES_REPO, default ryansalim-dev/wiretide-releases), and the appcast links there. The appcast
+# is kept on this repo's gh-pages branch next to the site and deployed with scripts/deploy-site.sh.
 #
 # Repository secrets:
 #   DEVELOPER_ID_CERT_P12     base64 of the "Developer ID Application" certificate + key (.p12)
@@ -10,9 +14,13 @@ name: Release
 #   APPLE_ID                  Apple ID used for notarization
 #   APPLE_APP_PASSWORD        app-specific password for that Apple ID
 #   SPARKLE_PRIVATE_KEY       private EdDSA key from Sparkle's generate_keys -x
+#   RELEASES_TOKEN            fine-grained token with Contents read/write on the releases repo
+#   CLOUDFLARE_API_TOKEN      token with Account > Cloudflare Pages > Edit
+#   CLOUDFLARE_ACCOUNT_ID     Cloudflare account ID
 # Repository variables:
 #   SPARKLE_PUBLIC_KEY        public EdDSA key (goes into Info.plist)
 #   LS_STORE_ID, LS_PRODUCT_IDS, PURCHASE_URL   Lemon Squeezy store, product(s) and checkout link
+#   RELEASES_REPO             public repo for release files (optional, default ryansalim-dev/wiretide-releases)
 
 on:
   push:
@@ -31,6 +39,7 @@ jobs:
     env:
       VERSION: ${{ github.ref_name }}
       FEED_URL: https://wiretide.app/appcast.xml
+      RELEASES_REPO: ${{ vars.RELEASES_REPO || 'ryansalim-dev/wiretide-releases' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,6 +52,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           SPARKLE: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           SPARKLE_PUBLIC: ${{ vars.SPARKLE_PUBLIC_KEY }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=()
           [[ -n "$CERT" ]] || missing+=(DEVELOPER_ID_CERT_P12)
@@ -50,6 +62,9 @@ jobs:
           [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
           [[ -n "$SPARKLE" ]] || missing+=(SPARKLE_PRIVATE_KEY)
           [[ -n "$SPARKLE_PUBLIC" ]] || missing+=("SPARKLE_PUBLIC_KEY (variable)")
+          [[ -n "$RELEASES_TOKEN" ]] || missing+=(RELEASES_TOKEN)
+          [[ -n "$CF_TOKEN" ]] || missing+=(CLOUDFLARE_API_TOKEN)
+          [[ -n "$CF_ACCOUNT" ]] || missing+=(CLOUDFLARE_ACCOUNT_ID)
           if (( ${#missing[@]} )); then
             echo "::error::Missing release settings: ${missing[*]}. See the comment at the top of release.yml."
             exit 1
@@ -99,18 +114,33 @@ jobs:
           # Keep earlier releases in the feed.
           git fetch origin gh-pages:gh-pages 2>/dev/null && git show gh-pages:appcast.xml > updates/appcast.xml 2>/dev/null || true
           echo "$SPARKLE_PRIVATE_KEY" | "$TOOLS/generate_appcast" --ed-key-file - \
-            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
-            --link "https://github.com/${{ github.repository }}" \
+            --download-url-prefix "https://github.com/$RELEASES_REPO/releases/download/${{ github.ref_name }}/" \
+            --link "https://wiretide.app" \
             updates
           cp updates/appcast.xml dist/appcast.xml
 
-      - name: Publish the GitHub release
+      - name: Publish the release to the public releases repo
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/*.zip --title "Wiretide ${{ github.ref_name }}" --generate-notes
-
-      - name: Publish the appcast to GitHub Pages
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
+          # Notes come from the tag's annotation (git tag -a v1.0.0 -m "..."), so nothing from the
+          # private repo's history is published by accident.
+          TAG="${{ github.ref_name }}"
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          NOTES=""
+          if [[ $(git cat-file -t "$TAG") == tag ]]; then
+            NOTES=$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")
+          fi
+          [[ -n "${NOTES//[[:space:]]/}" ]] || NOTES="Wiretide ${{ github.ref_name }} for macOS 14 or later."
+          gh release create "${{ github.ref_name }}" dist/*.zip --repo "$RELEASES_REPO" \
+            --title "Wiretide ${{ github.ref_name }}" --notes "$NOTES"
+
+      - name: Publish the appcast with the site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cp scripts/deploy-site.sh "$RUNNER_TEMP/deploy-site.sh"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           cp dist/appcast.xml "$RUNNER_TEMP/appcast.xml"
@@ -124,3 +154,4 @@ jobs:
           git add appcast.xml
           git commit -m "Appcast for ${{ github.ref_name }}"
           git push origin gh-pages
+          "$RUNNER_TEMP/deploy-site.sh" .
