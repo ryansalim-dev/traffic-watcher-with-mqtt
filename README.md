@@ -94,7 +94,7 @@ swift run Wiretide
 scripts/build-app.sh          # dist/Wiretide.app and a zip, universal, ad hoc signed
 ```
 
-The script takes its settings from environment variables (version, signing identity, Sparkle feed and key, Lemon Squeezy IDs, notarization credentials); they are listed at the top of the script. CI builds the bundle on every pull request and takes the screenshots from it. Pushing a `v*` tag runs `.github/workflows/release.yml`, which signs with Developer ID, notarizes, publishes a GitHub release and adds it to the Sparkle appcast on GitHub Pages. The secrets it needs are listed at the top of that file.
+The script takes its settings from environment variables (version, signing identity, Sparkle feed and key, Lemon Squeezy IDs, notarization credentials); they are listed at the top of the script. CI builds the bundle on every pull request and takes the screenshots from it. Pushing a `v*` tag runs `.github/workflows/release.yml`, which signs with Developer ID, notarizes, publishes the zip as a release of the public `wiretide-releases` repo and adds it to the Sparkle appcast at wiretide.app. The tag's annotation (`git tag -a v1.0.0 -m "..."`) becomes the release notes. The secrets it needs are listed at the top of that file.
 
 Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurchaseURL` and `TWReleaseDate` (`yyyy-MM-dd`) from Info.plist. Without them, as with `swift run`, Pro activation is off.
 
@@ -102,4 +102,4 @@ Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurc
 
 ## Landing page
 
-`site/` is the static landing page for Wiretide, published to GitHub Pages (the `gh-pages` branch, next to the Sparkle appcast) by `.github/workflows/site.yml` on every push to `main` that touches it. Download, checkout and waitlist links are set in `site/config.js`. Preview locally with `python3 -m http.server -d site`.
+`site/` is the static landing page for Wiretide, built on the `gh-pages` branch (next to the Sparkle appcast) and deployed to Cloudflare Pages with `scripts/deploy-site.sh` by `.github/workflows/site.yml` on every push to `main` that touches it. Download, checkout and waitlist links are set in `site/config.js`. Preview locally with `python3 -m http.server -d site`.

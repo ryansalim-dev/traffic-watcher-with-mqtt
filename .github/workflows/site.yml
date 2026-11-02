@@ -1,14 +1,16 @@
 name: Site
 
-# Publishes the landing page in site/ to the gh-pages branch, next to the Sparkle appcast that
-# release.yml writes there. Files this workflow doesn't own (appcast.xml, CNAME) are left alone.
-# site/CNAME points Pages at wiretide.app.
-# One-time setup: Settings > Pages > Source "Deploy from a branch", branch gh-pages, folder /.
+# Publishes the landing page in site/ to https://wiretide.app on Cloudflare Pages.
+# The gh-pages branch holds the built site next to the Sparkle appcast that release.yml writes
+# there; files this workflow doesn't own (appcast.xml, CNAME) are left alone. The whole branch is
+# then deployed with scripts/deploy-site.sh, so the appcast is always served alongside the site.
+#
+# Repository secrets: CLOUDFLARE_API_TOKEN (Account > Cloudflare Pages > Edit), CLOUDFLARE_ACCOUNT_ID.
 
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/site.yml']
+    paths: ['site/**', '.github/workflows/site.yml', 'scripts/deploy-site.sh']
   workflow_dispatch:
 
 permissions:
@@ -48,3 +50,9 @@ jobs:
             git commit -m "Site from ${GITHUB_SHA::7}"
             git push origin gh-pages
           fi
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/deploy-site.sh pages
