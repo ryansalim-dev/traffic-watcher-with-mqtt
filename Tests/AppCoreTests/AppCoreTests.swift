@@ -303,11 +303,11 @@ final class LicenseManagerTests: XCTestCase {
     func testActivatePersistsAndUnlocksPro() async {
         let now = Date(timeIntervalSince1970: 1_793_500_000)
         let manager = makeManager(replies: [Self.reply("activated")], now: now)
-        XCTAssertEqual(manager.sessionLimit, 3)
+        XCTAssertEqual(manager.savedSessionLimit, 1)
         await manager.activate(key: "  KEY-1  ")
         XCTAssertNil(manager.lastError)
         XCTAssertTrue(manager.entitlement.isPro)
-        XCTAssertNil(manager.sessionLimit)
+        XCTAssertNil(manager.savedSessionLimit)
         XCTAssertEqual(manager.license?.key, "KEY-1")
         XCTAssertTrue(manager.summary.hasPrefix("Pro · updates until"))
 
@@ -330,7 +330,7 @@ final class LicenseManagerTests: XCTestCase {
         let refused = makeManager(replies: [Self.reply("valid", ok: false, status: "disabled")], now: later)
         await refused.refreshIfNeeded()
         XCTAssertEqual(refused.entitlement, .free(.revoked))
-        XCTAssertNil(refused.sessionLimit, "a lapsed customer's saved sessions are never deleted")
+        XCTAssertNil(refused.savedSessionLimit, "a lapsed customer is never asked to give up saved sessions")
     }
 
     @MainActor
@@ -379,7 +379,7 @@ final class LicenseManagerTests: XCTestCase {
         try Data("not json".utf8).write(to: directory.appendingPathComponent("license.json"))
         let manager = makeManager(replies: [], now: Date())
         XCTAssertNotNil(manager.lastError)
-        XCTAssertNil(manager.sessionLimit, "never delete sessions because the license couldn't be read")
+        XCTAssertNil(manager.savedSessionLimit, "never limit sessions because the license couldn't be read")
     }
 
     @MainActor
@@ -531,23 +531,102 @@ final class LicenseManagerTests: XCTestCase {
 
 final class SessionLimitTests: XCTestCase {
     @MainActor
-    func testFreeTierKeepsNewestSessions() async throws {
+    private func record(_ model: CaptureViewModel) {
+        model.ingest(SampleTraffic.events()[1])
+    }
+
+    @MainActor
+    func testFreeTierAsksBeforeReplacingItsSavedSession() async throws {
+        let store = try CaptureStore(path: ":memory:", sessionName: "S1")
+        let model = CaptureViewModel(store: store, engine: nil)
+        model.savedSessionLimit = 1
+        record(model)
+
+        // The first saved session fits.
+        model.requestNewSession(named: "S2")
+        XCTAssertNil(model.sessionLimitPrompt)
+        XCTAssertEqual(model.sessions.map(\.name), ["S2", "S1"])
+
+        // An empty session adds nothing, so it never asks.
+        XCTAssertNil(model.sessionLimitPrompt(forNewSessionNamed: "S3"))
+
+        record(model)
+        model.requestNewSession(named: "S3")
+        let prompt = try XCTUnwrap(model.sessionLimitPrompt)
+        XCTAssertEqual(prompt.saving.name, "S2")
+        XCTAssertEqual(prompt.replacing.map(\.name), ["S1"])
+        XCTAssertEqual(try store.sessions().map(\.name), ["S2", "S1"], "nothing changes until the user chooses")
+
+        model.replaceAndStartNewSession(prompt)
+        XCTAssertNil(model.sessionLimitPrompt)
+        XCTAssertEqual(try store.sessions().map(\.name), ["S3", "S2"])
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    @MainActor
+    func testSessionsFromBeforeTheLimitStayUntilReplaced() async throws {
+        let store = try CaptureStore(path: ":memory:", sessionName: "S1")
+        let model = CaptureViewModel(store: store, engine: nil)
+        for name in ["S2", "S3", "S4"] {
+            record(model)
+            model.newSession(named: name)
+        }
+        record(model)
+        model.savedSessionLimit = 1
+        model.reloadSessions()
+        XCTAssertEqual(model.savedSessions.map(\.name), ["S3", "S2", "S1"], "setting the limit deletes nothing")
+
+        let prompt = try XCTUnwrap(model.sessionLimitPrompt(forNewSessionNamed: "S5"))
+        XCTAssertEqual(prompt.replacing.map(\.name), ["S3", "S2", "S1"])
+        model.replaceAndStartNewSession(prompt)
+        XCTAssertEqual(try store.sessions().map(\.name), ["S5", "S4"])
+    }
+
+    @MainActor
+    func testProNeverAsks() async throws {
+        let store = try CaptureStore(path: ":memory:", sessionName: "S1")
+        let model = CaptureViewModel(store: store, engine: nil)
+        for name in ["S2", "S3"] {
+            record(model)
+            model.requestNewSession(named: name)
+        }
+        XCTAssertNil(model.sessionLimitPrompt)
+        XCTAssertEqual(try store.sessions().count, 3)
+    }
+
+    @MainActor
+    func testLaunchContinuesTheLatestSessionWhenFull() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sessions-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try CaptureStore(path: directory.appendingPathComponent("db.sqlite").path, sessionName: "S1")
-        let model = CaptureViewModel(store: store, engine: nil)
-        for name in ["S2", "S3", "S4"] { model.newSession(named: name) }
-        XCTAssertEqual(try store.sessions().count, 4)
+        let path = directory.appendingPathComponent("db.sqlite").path
 
-        model.sessionLimit = 3
-        XCTAssertEqual(try store.sessions().map(\.name), ["S4", "S3", "S2"])
-        model.newSession(named: "S5")
-        XCTAssertEqual(try store.sessions().map(\.name), ["S5", "S4", "S3"])
+        func launch(_ name: String) throws -> CaptureViewModel {
+            let model = CaptureViewModel(store: try CaptureStore(path: path, sessionName: name), engine: nil)
+            model.savedSessionLimit = 1
+            return model
+        }
 
-        model.sessionLimit = nil
-        model.newSession(named: "S6")
-        XCTAssertEqual(try store.sessions().count, 4)
+        // Second launch: one saved session fits, so a new session starts.
+        let first = try launch("Monday")
+        record(first)
+        let second = try launch("Tuesday")
+        XCTAssertFalse(second.continueLatestSessionIfFull())
+        record(second)
+        record(second)
+
+        // Third launch: the saved slot is full, so recording carries on in Tuesday.
+        let third = try launch("Wednesday")
+        XCTAssertTrue(third.continueLatestSessionIfFull())
+        XCTAssertEqual(third.sessions.map(\.name), ["Tuesday", "Monday"])
+        XCTAssertTrue(third.isLive(third.sessions[0]))
+        XCTAssertEqual(third.rows.count, 2, "the timeline shows what Tuesday already has")
+        record(third)
+        XCTAssertEqual(try third.store.events(in: third.store.currentSession).count, 3)
+
+        // Pro starts a new session every launch.
+        let pro = CaptureViewModel(store: try CaptureStore(path: path, sessionName: "Thursday"), engine: nil)
+        XCTAssertFalse(pro.continueLatestSessionIfFull())
     }
 }
 

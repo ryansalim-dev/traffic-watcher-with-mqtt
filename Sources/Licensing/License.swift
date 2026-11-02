@@ -68,17 +68,17 @@ public struct LicensePolicy: Equatable, Sendable {
     public var offlineGracePeriod: TimeInterval
     /// After this long since the last check, the app re-validates in the background.
     public var revalidationInterval: TimeInterval
-    /// Saved capture sessions kept on the free tier (the current one included).
-    public var freeSessionLimit: Int
+    /// Saved capture sessions the free tier keeps next to the one recording now.
+    public var freeSavedSessions: Int
 
     public init(updateWindow: DateComponents = DateComponents(year: 1),
                 offlineGracePeriod: TimeInterval = 30 * 86_400,
                 revalidationInterval: TimeInterval = 3 * 86_400,
-                freeSessionLimit: Int = 3) {
+                freeSavedSessions: Int = 1) {
         self.updateWindow = updateWindow
         self.offlineGracePeriod = offlineGracePeriod
         self.revalidationInterval = revalidationInterval
-        self.freeSessionLimit = freeSessionLimit
+        self.freeSavedSessions = freeSavedSessions
     }
 
     public static let standard = LicensePolicy()

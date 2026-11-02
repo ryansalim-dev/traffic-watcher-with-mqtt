@@ -73,7 +73,7 @@ struct LicenseSettings: View {
                 ForEach(ProFeature.allCases, id: \.self) { feature in
                     Label {
                         Text(feature == .unlimitedSessions
-                             ? "\(feature.title) (Free keeps the last \(license.policy.freeSessionLimit))"
+                             ? "\(feature.title) (Free keeps \(FreeSessions.count(license.policy.freeSavedSessions)))"
                              : feature.title)
                     } icon: {
                         Image(systemName: license.entitlement.allows(feature) ? "checkmark.circle.fill" : "lock")

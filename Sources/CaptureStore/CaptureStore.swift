@@ -215,22 +215,20 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         }
     }
 
-    /// Deletes the oldest sessions so at most `count` remain; the current session is always kept.
-    /// Returns how many were deleted.
-    @discardableResult
-    public func pruneSessions(keepingNewest count: Int) throws -> Int {
-        let current = currentSession
-        var keep = max(1, count) - 1 // the current session takes one slot
-        var deleted = 0
-        for session in try sessions() where session.id != current {
-            if keep > 0 {
-                keep -= 1
-            } else {
-                try deleteSession(session.id)
-                deleted += 1
-            }
+    /// Records into an earlier session again, as if it never ended. The session that was current is
+    /// removed when it never recorded anything (every launch starts one).
+    public func resumeSession(_ id: UUID) throws {
+        try withLock {
+            guard id != _currentSession else { return }
+            let exists = try database.query("SELECT 1 FROM sessions WHERE id = ?", [.text(id.uuidString)])
+            guard !exists.isEmpty else { throw CaptureStoreError.unknownSession }
+            let previous = _currentSession
+            _currentSession = id
+            try database.query(
+                "DELETE FROM sessions WHERE id = ? AND NOT EXISTS (SELECT 1 FROM events WHERE session_id = sessions.id)",
+                [.text(previous.uuidString)]
+            )
         }
-        return deleted
     }
 
     // MARK: Helpers
@@ -299,4 +297,5 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
 
 public enum CaptureStoreError: Error, Equatable {
     case cannotDeleteCurrentSession
+    case unknownSession
 }

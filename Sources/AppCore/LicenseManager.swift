@@ -106,12 +106,13 @@ public final class LicenseManager {
         providers.first { $0.id == license.provider }
     }
 
-    /// Saved sessions the free tier keeps; nil when there is no limit. The limit deletes old sessions, so
-    /// it applies only to Macs that never had a license: a customer whose license lapsed, is offline
-    /// past the grace period, or whose license couldn't be read keeps everything they captured.
-    public var sessionLimit: Int? {
+    /// Saved sessions the free tier keeps next to the one recording now; nil when there is no limit.
+    /// Going past it asks to replace older sessions, so it applies only to Macs that never had a
+    /// license: a customer whose license lapsed, is offline past the grace period, or whose license
+    /// couldn't be read is never asked to give up what they captured.
+    public var savedSessionLimit: Int? {
         guard license == nil, !loadFailed else { return nil }
-        return policy.freeSessionLimit
+        return policy.freeSavedSessions
     }
 
     public func activate(key rawKey: String) async {
