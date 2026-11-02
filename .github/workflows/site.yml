@@ -2,6 +2,7 @@ name: Site
 
 # Publishes the landing page in site/ to the gh-pages branch, next to the Sparkle appcast that
 # release.yml writes there. Files this workflow doesn't own (appcast.xml, CNAME) are left alone.
+# site/CNAME points Pages at wiretide.app.
 # One-time setup: Settings > Pages > Source "Deploy from a branch", branch gh-pages, folder /.
 
 on:
