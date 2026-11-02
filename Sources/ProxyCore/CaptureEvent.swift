@@ -2,7 +2,7 @@ import Foundation
 import MQTTCore
 
 /// A header as seen on the wire, order and case preserved.
-public struct CapturedHeader: Equatable, Sendable, Codable {
+public struct CapturedHeader: Equatable, Hashable, Sendable, Codable {
     public var name: String
     public var value: String
 
@@ -30,11 +30,17 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     public var breakpoint: BreakpointStages?
     /// DNS, connect, TLS, waiting and download times of the upstream request, when the proxy sent one.
     public var timing: HTTPTiming?
+    /// Names of the map and rewrite rules that changed this exchange; the request and response are
+    /// what was actually sent and returned. Nil when no rule applied.
+    public var rewrittenBy: [String]?
+    /// True when a Map Local rule answered and the server was never contacted.
+    public var mappedLocally: Bool?
 
     public init(id: UUID = UUID(), startedAt: Date, duration: TimeInterval, method: String, url: String,
                 requestHeaders: [CapturedHeader], requestBody: [UInt8], statusCode: Int?,
                 responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String? = nil,
-                breakpoint: BreakpointStages? = nil, timing: HTTPTiming? = nil) {
+                breakpoint: BreakpointStages? = nil, timing: HTTPTiming? = nil,
+                rewrittenBy: [String]? = nil, mappedLocally: Bool? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.duration = duration
@@ -48,6 +54,8 @@ public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
         self.error = error
         self.breakpoint = breakpoint
         self.timing = timing
+        self.rewrittenBy = rewrittenBy
+        self.mappedLocally = mappedLocally
     }
 }
 
@@ -72,12 +80,15 @@ public struct MQTTCaptureEvent: Equatable, Sendable {
     public var timestamp: Date
     public var broker: String
     public var event: MQTTSessionEvent
+    /// Names of the rewrite rules that changed this PUBLISH; the packet is what was forwarded.
+    public var rewrittenBy: [String]?
 
-    public init(connectionID: UUID, timestamp: Date, broker: String, event: MQTTSessionEvent) {
+    public init(connectionID: UUID, timestamp: Date, broker: String, event: MQTTSessionEvent, rewrittenBy: [String]? = nil) {
         self.connectionID = connectionID
         self.timestamp = timestamp
         self.broker = broker
         self.event = event
+        self.rewrittenBy = rewrittenBy
     }
 }
 

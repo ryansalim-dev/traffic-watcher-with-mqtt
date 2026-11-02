@@ -86,39 +86,7 @@ public struct BreakpointRule: Codable, Equatable, Hashable, Identifiable, Sendab
 
     /// Wildcard match of `pattern` against the whole of `url`.
     static func glob(_ pattern: String, matches url: String) -> Bool {
-        var pattern = pattern.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !pattern.isEmpty else { return false }
-        if !pattern.contains("://") { pattern = "*://" + pattern }
-        var text = url.lowercased()
-        if pattern.hasSuffix("/") { pattern.removeLast() }
-        if text.hasSuffix("/") { text.removeLast() }
-        return wildcard(Array(pattern.utf8), Array(text.utf8))
-    }
-
-    /// Iterative `*` matching with backtracking to the last star; linear in practice.
-    private static func wildcard(_ p: [UInt8], _ t: [UInt8]) -> Bool {
-        let star = UInt8(ascii: "*")
-        var pi = 0, ti = 0
-        var lastStar: Int?
-        var resume = 0
-        while ti < t.count {
-            if pi < p.count, p[pi] == star {
-                lastStar = pi
-                resume = ti
-                pi += 1
-            } else if pi < p.count, p[pi] == t[ti] {
-                pi += 1
-                ti += 1
-            } else if let star = lastStar {
-                pi = star + 1
-                resume += 1
-                ti = resume
-            } else {
-                return false
-            }
-        }
-        while pi < p.count, p[pi] == star { pi += 1 }
-        return pi == p.count
+        URLPattern.matches(pattern, url: url)
     }
 }
 

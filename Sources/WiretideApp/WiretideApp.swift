@@ -50,6 +50,13 @@ struct WiretideApp: App {
             RowDensityCommands()
         }
 
+        Window("Map & Rewrite", id: RulesWindow.id) {
+            if let model = setup.model {
+                RulesWindow(model: model)
+            }
+        }
+        .windowResizability(.contentMinSize)
+
         Settings {
             if case .ready(let model, let storage, let license, let helper) = setup {
                 SettingsView(model: model, certificates: storage, license: license, helper: helper)
@@ -66,6 +73,7 @@ enum AppSetup {
     private static let configurationKey = "engineConfiguration"
     private static let breakpointRulesKey = "breakpointRules"
     private static let publishTargetKey = "publishTarget"
+    private static let rewriteRulesKey = "rewriteRules"
 
     var model: CaptureViewModel? {
         if case .ready(let model, _, _, _) = self { model } else { nil }
@@ -97,6 +105,11 @@ enum AppSetup {
                 if let data = try? JSONEncoder().encode(rules) { defaults.set(data, forKey: breakpointRulesKey) }
             }
             let engine = CaptureEngine(authority: authority)
+            let rewriteSettings = defaults.data(forKey: rewriteRulesKey).flatMap { try? JSONDecoder().decode(RewriteSettings.self, from: $0) }
+                ?? RewriteSettings()
+            let rewrites = RewriteCenter(settings: rewriteSettings) { settings in
+                if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: rewriteRulesKey) }
+            }
             let publishTarget = defaults.data(forKey: publishTargetKey).flatMap { try? JSONDecoder().decode(MQTTBrokerTarget.self, from: $0) }
                 ?? MQTTBrokerTarget(host: configuration.forwarders.first?.brokerHost ?? "localhost",
                                     port: configuration.forwarders.first?.brokerPort,
@@ -118,7 +131,8 @@ enum AppSetup {
                     }
                 },
                 breakpoints: breakpoints,
-                composer: composer
+                composer: composer,
+                rewrites: rewrites
             )
             let license = LicenseManager(
                 configuration: LicenseConfiguration(infoDictionary: Bundle.main.infoDictionary ?? [:]),
@@ -173,6 +187,15 @@ struct CaptureCommands: Commands {
                 model?.breakpoints.isEnabled.toggle()
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(model == nil)
+
+            Button("Map & Rewrite Rules…") { model?.rewrites.isPresented = true }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(model == nil)
+
+            Button(model?.rewrites.isEnabled == true ? "Turn Map & Rewrite Off" : "Turn Map & Rewrite On") {
+                model?.rewrites.isEnabled.toggle()
+            }
             .disabled(model == nil)
 
             Button("Publish MQTT Message…") { model?.composer.isPresented = true }

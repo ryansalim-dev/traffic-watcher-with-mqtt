@@ -4,6 +4,7 @@ import AppKit
 import CaptureStore
 import ImageIO
 import Licensing
+import MQTTCore
 import ProxyCore
 import SwiftUI
 
@@ -127,6 +128,7 @@ enum Screenshots {
                         size: settingsSize, dark: true, name: "13-settings-license-pro-dark", into: directory)
 
         try await shootProTools(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper, into: directory)
+        try await shootRules(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
         await model.stopCapture()
     }
 
@@ -235,15 +237,120 @@ enum Screenshots {
         })), size: stage, dark: false, name: "20-mqtt-publish-free", into: directory, dimToolbar: true)
     }
 
+    /// Map Local, Map Remote, Rewrite and MQTT rules in the rules window, and their notes in the inspector.
+    private static func shootRules(model: CaptureViewModel, storage: CertificateStorage, freeLicense: LicenseManager,
+                                   proLicense: LicenseManager, into directory: URL) async throws {
+        let center = model.rewrites
+        let windowSize = NSSize(width: 980, height: 660)
+        let devices = model.rows.last { row in
+            if case .httpExchange(let e) = row.event { e.method == "GET" && e.url.hasPrefix("https://api.example.com/v2/devices") } else { false }
+        }
+
+        // Free tier, nothing set up yet: the empty state and the Pro notice.
+        model.apply(freeLicense.entitlement)
+        center.httpRules = []
+        center.mqttRules = []
+        center.selection = nil
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: false, name: "21-rules-empty-free", into: directory,
+                        title: "Map & Rewrite")
+
+        model.apply(proLicense.entitlement)
+        var mapLocal: HTTPRule
+        if let devices, case .httpExchange(let exchange) = devices.event {
+            mapLocal = center.addMapLocal(from: exchange)
+        } else {
+            mapLocal = center.addHTTPRule(kind: .mapLocal, pattern: "https://api.example.com/v2/devices*", method: "GET")
+        }
+        mapLocal.name = "Empty device list"
+        mapLocal.mapLocal.body = """
+        {
+          "devices": [],
+          "page": 1,
+          "total": 0
+        }
+        """
+        center.httpRules[0] = mapLocal
+        center.addHTTPRule(kind: .mapRemote, pattern: "api.example.com/v2/*")
+        center.httpRules[1].name = "API on localhost"
+        center.httpRules[1].mapRemote = MapRemoteDestination(url: "http://localhost:3000/v2/*")
+        center.addHTTPRule(kind: .rewrite, pattern: "api.example.com/v2/login", method: "POST")
+        center.httpRules[2].name = "Force free plan"
+        center.httpRules[2].operations = [
+            RewriteOperation(phase: .request, target: .header, action: .set, name: "X-Debug", value: "1"),
+            RewriteOperation(phase: .response, target: .json, action: .set, name: "user.plan", value: "\"free\""),
+            RewriteOperation(phase: .response, target: .header, action: .replace, name: "Cache-Control", value: "max-age=0",
+                             find: "max-age=\\d+", useRegex: true),
+        ]
+        center.httpRules[2].isEnabled = true
+        center.addHTTPRule(kind: .rewrite, pattern: "*.example.net/*")
+        center.httpRules[3].isEnabled = false
+        center.addMQTTRule(topicFilter: "home/+/temperature")
+        center.mqttRules[0].name = "Heatwave"
+        center.mqttRules[0].direction = .brokerToClient
+        center.mqttRules[0].operations = [
+            MQTTRewriteOperation(target: .json, action: .set, name: "celsius", value: "41.5"),
+            MQTTRewriteOperation(target: .topic, action: .replace, value: "/test/", find: "/kitchen/"),
+        ]
+
+        center.selection = .http(center.httpRules[0].id)
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: false, name: "22-rules-map-local", into: directory,
+                        title: "Map & Rewrite")
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: true, name: "22b-rules-map-local-dark", into: directory,
+                        title: "Map & Rewrite")
+        center.selection = .http(center.httpRules[1].id)
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: true, name: "23-rules-map-remote-dark", into: directory,
+                        title: "Map & Rewrite")
+        center.selection = .http(center.httpRules[2].id)
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: false, name: "24-rules-rewrite", into: directory,
+                        title: "Map & Rewrite")
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: true, name: "24b-rules-rewrite-dark", into: directory,
+                        title: "Map & Rewrite")
+        center.selection = .mqtt(center.mqttRules[0].id)
+        try await shoot(RulesWindow(model: model), size: windowSize, dark: true, name: "25-rules-mqtt-dark", into: directory,
+                        title: "Map & Rewrite")
+
+        // The main window: an exchange answered by Map Local, the toolbar count and the sidebar line.
+        let mocked = HTTPExchange(
+            startedAt: Date(), duration: 0.003, method: "GET", url: "https://api.example.com/v2/devices?room=kitchen&page=1",
+            requestHeaders: [CapturedHeader(name: "Accept", value: "application/json")], requestBody: [], statusCode: 200,
+            responseHeaders: [CapturedHeader(name: "Content-Type", value: "application/json")],
+            responseBody: Array(#"{"devices":[],"page":1,"total":0}"#.utf8),
+            rewrittenBy: ["Empty device list"], mappedLocally: true)
+        model.ingest(.httpExchange(mocked))
+        model.section = .http
+        model.selection = model.rows.last?.id
+        let size = NSSize(width: 1440, height: 860)
+        try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: size, dark: true,
+                        name: "26-timeline-map-local-dark", into: directory)
+
+        if let reading = model.rows.last(where: { $0.kind == .mqtt && $0.summary.contains("home/kitchen/temperature") }),
+           case .mqtt(var capture) = reading.event, case .publish(var publish) = capture.event.packet {
+            publish.topic = "home/test/temperature"
+            publish.payload = Array(#"{"celsius":41.5,"humidity":38}"#.utf8)
+            if let bytes = try? MQTTPacketEncoder.encode(.publish(publish), version: capture.event.version) {
+                capture.event.frame = MQTTFrame(packet: .publish(publish), rawBytes: bytes)
+            }
+            capture.event.resolvedTopic = publish.topic
+            capture.event.direction = .brokerToClient
+            capture.timestamp = Date()
+            capture.rewrittenBy = ["Heatwave"]
+            model.ingest(.mqtt(capture))
+            model.section = .mqtt
+            model.selection = model.rows.last?.id
+            try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: size, dark: false,
+                            name: "27-mqtt-rewritten", into: directory)
+        }
+    }
+
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL,
-                                       dimToolbar: Bool = false) async throws {
+                                       dimToolbar: Bool = false, title: String? = nil) async throws {
         let window = UnconstrainedWindow(contentRect: NSRect(origin: NSPoint(x: 40, y: 40), size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.title = name.contains("settings") ? "Settings" : "Wiretide"
+        window.title = title ?? (name.contains("settings") ? "Settings" : "Wiretide")
         // Matches the app's main window, which hides its title (`.unified(showsTitle: false)`).
-        if !name.contains("settings") { window.titleVisibility = .hidden }
+        if title == nil && !name.contains("settings") { window.titleVisibility = .hidden }
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let hosting = NSHostingView(rootView: view)
         hosting.sceneBridgingOptions = [.toolbars, .title]

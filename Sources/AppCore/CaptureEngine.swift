@@ -111,6 +111,7 @@ public final class CaptureEngine: @unchecked Sendable {
     private var forwarders: [UUID: MQTTForwarder] = [:]
     private var _runningConfiguration: EngineConfiguration?
     private var _breakpoints: HTTPBreakpointHandler?
+    private var _rules: LiveRules?
 
     public init(authority: CertificateAuthority, threads: Int = System.coreCount) {
         self.authority = authority
@@ -133,6 +134,13 @@ public final class CaptureEngine: @unchecked Sendable {
         set { lock.withLock { _breakpoints = newValue } }
     }
 
+    /// Map and rewrite rules, handed to the proxy and forwarders when capture starts. They read the
+    /// rules for every request and packet, so edits take effect without restarting capture.
+    public var rules: LiveRules? {
+        get { lock.withLock { _rules } }
+        set { lock.withLock { _rules = newValue } }
+    }
+
     /// A publisher on this engine's event loops whose traffic lands in the capture stream.
     public func makePublisher() -> MQTTPublisher {
         MQTTPublisher(group: group, sink: sink)
@@ -149,6 +157,8 @@ public final class CaptureEngine: @unchecked Sendable {
         var proxyConfiguration = HTTPProxyServer.Configuration()
         proxyConfiguration.interceptor = configuration.decryptHTTPS ? interceptor : nil
         proxyConfiguration.breakpoints = breakpoints
+        let rules = self.rules
+        proxyConfiguration.rules = rules
         let proxy = HTTPProxyServer(group: group, sink: sink, configuration: proxyConfiguration)
         let port = try await proxy.start(host: configuration.listenHost, port: configuration.proxyPort)
 
@@ -160,7 +170,8 @@ public final class CaptureEngine: @unchecked Sendable {
                     sink: sink,
                     brokerHost: forwarder.brokerHost,
                     brokerPort: forwarder.brokerPort,
-                    tls: forwarder.useTLS ? .init(interceptor: interceptor) : nil
+                    tls: forwarder.useTLS ? .init(interceptor: interceptor) : nil,
+                    rules: rules
                 )
                 try await instance.start(host: configuration.listenHost, port: forwarder.listenPort)
                 started[forwarder.id] = instance
