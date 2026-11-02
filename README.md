@@ -94,11 +94,11 @@ swift run Wiretide
 scripts/build-app.sh          # dist/Wiretide.app and a zip, universal, ad hoc signed
 ```
 
-The script takes its settings from environment variables (version, signing identity, Sparkle feed and key, Lemon Squeezy IDs, notarization credentials); they are listed at the top of the script. CI builds the bundle on every pull request and takes the screenshots from it. Pushing a `v*` tag runs `.github/workflows/release.yml`, which signs with Developer ID, notarizes, publishes the zip as a release of the public `wiretide-releases` repo and adds it to the Sparkle appcast at wiretide.app. The tag's annotation (`git tag -a v1.0.0 -m "..."`) becomes the release notes. The secrets it needs are listed at the top of that file.
+The script takes its settings from environment variables (version, signing identity, Sparkle feed and key, Lemon Squeezy IDs, notarization credentials); they are listed at the top of the script. CI builds the bundle and takes the screenshots from it on every push to `main`, and on demand for any branch (Actions → CI → Run workflow); pull requests run only the Linux tests, to save macOS minutes. Pushing a `v*` tag runs `.github/workflows/release.yml`, which signs with Developer ID, notarizes, publishes the zip as a release of the public `wiretide-releases` repo and adds it to the Sparkle appcast at wiretide.app. The tag's annotation (`git tag -a v1.0.0 -m "..."`) becomes the release notes. The secrets it needs are listed at the top of that file.
 
 Release builds read `TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`, `TWPurchaseURL` and `TWReleaseDate` (`yyyy-MM-dd`) from Info.plist. Without them, as with `swift run`, Pro activation is off.
 
-`Wiretide --screenshots <dir>` loads sample traffic and writes PNGs of the main screens. CI runs it on every pull request and uploads the result as the `screenshots` artifact.
+`Wiretide --screenshots <dir>` loads sample traffic and writes PNGs of the main screens. The macOS CI job runs it and uploads the result as the `screenshots` artifact.
 
 ## Landing page
 
