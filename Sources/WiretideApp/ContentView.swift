@@ -29,9 +29,9 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(model: model, license: license)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 228)
                 // The mockup puts the sidebar button in the content toolbar, next to the recording capsule.
                 .toolbar(removing: .sidebarToggle)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 228, max: 320)
         } detail: {
             Group {
                 if showsTopics {
@@ -108,10 +108,10 @@ struct ContentView: View {
             .background(Theme.panel.ignoresSafeArea())
             .inspectorColumnWidth(min: 380, ideal: 420, max: 800)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                // The spacer pushes both buttons to the inspector's trailing edge, as in the mockup.
+                ToolbarItemGroup {
+                    Spacer()
                     InspectorCopyButton(model: model, topic: showsTopics ? selectedTopic : nil)
-                }
-                ToolbarItem(placement: .primaryAction) {
                     InspectorToggle(isOn: $showInspector)
                 }
             }

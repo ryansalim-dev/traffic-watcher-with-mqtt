@@ -182,7 +182,7 @@ enum Screenshots {
         let second = Task { await handler.editResponse(response, for: login) }
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
-        let stageSize = NSSize(width: 1360, height: 740)
+        let stageSize = NSSize(width: 1440, height: 760)
         try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 540) {
             BreakpointEditor(center: center, item: center.paused[0])
         }, size: stageSize, dark: false, name: "14-breakpoint-request", into: directory, dimToolbar: true)
@@ -213,7 +213,7 @@ enum Screenshots {
         model.composer.retain = true
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
-        let stage = NSSize(width: 1360, height: 740)
+        let stage = NSSize(width: 1440, height: 760)
         func composerStage() -> some View {
             SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense, presentsSheets: false), height: 520) {
                 MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
@@ -321,17 +321,20 @@ private struct SheetStage<Background: View, Sheet: View>: View {
     @ViewBuilder var sheet: Sheet
 
     var body: some View {
-        ZStack(alignment: .top) {
-            background
-                .allowsHitTesting(false)
-            // Below the toolbar only: the toolbar is drawn by the window, so `shoot` dims it in the PNG instead.
-            Color.black.opacity(SheetStage.dimming).ignoresSafeArea(edges: [.horizontal, .bottom])
-            sheet
-                .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
-                .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
-        }
+        // An overlay keeps the window's content as the root view, so its columns lay out as in the other shots.
+        background
+            .allowsHitTesting(false)
+            .overlay(alignment: .top) {
+                ZStack(alignment: .top) {
+                    // Below the toolbar only: the toolbar is drawn by the window, so `shoot` dims it in the PNG instead.
+                    Color.black.opacity(SheetStage.dimming).ignoresSafeArea(edges: [.horizontal, .bottom])
+                    sheet
+                        .frame(width: width, height: height)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
+                        .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
+                }
+            }
     }
 }
 
