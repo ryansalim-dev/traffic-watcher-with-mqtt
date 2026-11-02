@@ -172,6 +172,8 @@ public final class CaptureViewModel {
     public let breakpoints: BreakpointCenter
     /// MQTT publish and replay (Pro).
     public let composer: MQTTComposer
+    /// Map Local, Map Remote and Rewrite rules (Pro).
+    public let rewrites: RewriteCenter
     private let engine: CaptureEngine?
     private let saveConfiguration: ((EngineConfiguration) -> Void)?
     private let systemProxy: SystemProxyControlling?
@@ -184,13 +186,17 @@ public final class CaptureViewModel {
                 systemProxy: SystemProxyControlling? = nil,
                 saveConfiguration: ((EngineConfiguration) -> Void)? = nil,
                 breakpoints: BreakpointCenter? = nil,
-                composer: MQTTComposer? = nil) {
+                composer: MQTTComposer? = nil,
+                rewrites: RewriteCenter? = nil) {
         self.store = store
         self.engine = engine
         let breakpoints = breakpoints ?? BreakpointCenter()
         self.breakpoints = breakpoints
         self.composer = composer ?? MQTTComposer(publisher: engine?.makePublisher())
         engine?.breakpoints = breakpoints.handler
+        let rewrites = rewrites ?? RewriteCenter()
+        self.rewrites = rewrites
+        engine?.rules = rewrites.rules
         self.systemProxy = systemProxy
         self.configuration = configuration
         self.saveConfiguration = saveConfiguration
@@ -214,6 +220,31 @@ public final class CaptureViewModel {
     public func apply(_ entitlement: Entitlement) {
         breakpoints.isAllowed = entitlement.allows(.breakpoints)
         composer.isAllowed = entitlement.allows(.mqttPublish)
+        rewrites.isAllowed = entitlement.allows(.mapRewrite)
+    }
+
+    /// Starts a map or rewrite rule from an HTTP row and opens the rules window on it.
+    @discardableResult
+    public func addRule(_ kind: HTTPRule.Kind, for row: TrafficRow) -> HTTPRule? {
+        guard case .httpExchange(let exchange) = row.event else { return nil }
+        let rule: HTTPRule
+        switch kind {
+        case .mapLocal: rule = rewrites.addMapLocal(from: exchange)
+        case .mapRemote: rule = rewrites.addMapRemote(from: exchange)
+        case .rewrite: rule = rewrites.addRewrite(from: exchange)
+        }
+        rewrites.isPresented = true
+        return rule
+    }
+
+    /// Starts an MQTT rewrite rule for a PUBLISH row's topic and opens the rules window on it.
+    @discardableResult
+    public func addMQTTRule(for row: TrafficRow) -> MQTTRule? {
+        guard case .mqtt(let capture) = row.event, case .publish = capture.event.packet,
+              let topic = capture.event.resolvedTopic else { return nil }
+        let rule = rewrites.addMQTTRule(topicFilter: topic)
+        rewrites.isPresented = true
+        return rule
     }
 
     /// Fills the composer with a captured PUBLISH, ready to send again. False when `row` isn't one.

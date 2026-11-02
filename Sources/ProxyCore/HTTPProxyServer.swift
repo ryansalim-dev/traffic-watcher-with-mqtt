@@ -19,6 +19,8 @@ public final class HTTPProxyServer: @unchecked Sendable {
         public var upstreamTLS: TLSConfiguration = .makeClientConfiguration()
         /// Pauses matching exchanges so they can be edited. Nil never pauses.
         public var breakpoints: HTTPBreakpointHandler?
+        /// Map Local, Map Remote and Rewrite rules, read for every request. Nil changes nothing.
+        public var rules: LiveRules?
         public init() {}
     }
 
@@ -205,10 +207,11 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             body: Array(body.readableBytesView)
         )
         var paused: BreakpointStages = []
+        var applied: [String] = []
         let sink = self.sink
 
         func record(_ request: HTTPRequestDraft, status: Int?, responseHeaders: [CapturedHeader], responseBody: [UInt8], error: String?,
-                    timing: HTTPTiming? = nil) {
+                    timing: HTTPTiming? = nil, mappedLocally: Bool = false) {
             sink.record(.httpExchange(HTTPExchange(
                 id: id,
                 startedAt: startedAt,
@@ -222,7 +225,9 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                 responseBody: responseBody,
                 error: error,
                 breakpoint: paused.isEmpty ? nil : paused,
-                timing: timing
+                timing: timing,
+                rewrittenBy: applied.isEmpty ? nil : applied,
+                mappedLocally: mappedLocally ? true : nil
             )))
         }
 
@@ -240,6 +245,25 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             return
         }
 
+        // Map and rewrite rules run first, so a breakpoint shows the request as the rules left it.
+        let rules = configuration.rules?.http ?? []
+        let outcome = rules.isEmpty ? nil : HTTPRewriter.rewriteRequest(original, rules: rules)
+        let prepared = outcome?.request ?? original
+        applied = outcome?.applied ?? []
+        let preparedTarget: AbsoluteHTTPTarget
+        let preparedTLS: Bool
+        if prepared.url == original.url {
+            preparedTarget = originalTarget
+            preparedTLS = origin != nil
+        } else if let parsed = AbsoluteHTTPTarget.parse(url: prepared.url) {
+            (preparedTarget, preparedTLS) = parsed
+        } else {
+            let message = "A rewrite rule produced a URL that isn't an absolute http:// or https:// URL"
+            record(prepared, status: 400, responseHeaders: [], responseBody: [], error: message)
+            respondWithError(context: context, status: .badRequest, message: message, keepAlive: head.isKeepAlive)
+            return
+        }
+
         let breakpoints = configuration.breakpoints
         let stages = breakpoints?.stages(method: original.method, url: original.url) ?? []
         let loop = context.eventLoop
@@ -248,26 +272,69 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         if stages.contains(.request), let breakpoints {
             paused.insert(.request)
             let promise = loop.makePromise(of: BreakpointResolution<HTTPRequestDraft>.self)
-            promise.completeWithTask { await breakpoints.editRequest(original) }
+            promise.completeWithTask { await breakpoints.editRequest(prepared) }
             requestDecision = promise.futureResult
         } else {
-            requestDecision = loop.makeSucceededFuture(.proceed(original))
+            requestDecision = loop.makeSucceededFuture(.proceed(prepared))
         }
 
         requestDecision.whenSuccess { decision in
             guard case .proceed(let request) = decision else {
                 let message = "Aborted at a breakpoint"
-                record(original, status: nil, responseHeaders: [], responseBody: [], error: message)
+                record(prepared, status: nil, responseHeaders: [], responseBody: [], error: message)
                 self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
+                return
+            }
+
+            /// Response rules, then the response breakpoint, then back to the app.
+            func deliver(_ received: HTTPResponseDraft, timing: HTTPTiming?, mappedLocally: Bool) {
+                var received = received
+                if let outcome {
+                    let (rewritten, names) = HTTPRewriter.rewriteResponse(received, matched: outcome.matched)
+                    received = rewritten
+                    for name in names where !applied.contains(name) { applied.append(name) }
+                }
+                let responseDecision: EventLoopFuture<BreakpointResolution<HTTPResponseDraft>>
+                if stages.contains(.response), let breakpoints {
+                    paused.insert(.response)
+                    let promise = loop.makePromise(of: BreakpointResolution<HTTPResponseDraft>.self)
+                    let sent = received
+                    promise.completeWithTask { await breakpoints.editResponse(sent, for: request) }
+                    responseDecision = promise.futureResult
+                } else {
+                    responseDecision = loop.makeSucceededFuture(.proceed(received))
+                }
+                responseDecision.whenSuccess { decision in
+                    guard case .proceed(let final) = decision else {
+                        let message = "Response aborted at a breakpoint"
+                        record(request, status: nil, responseHeaders: [], responseBody: [], error: message)
+                        self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
+                        return
+                    }
+                    record(request, status: final.statusCode, responseHeaders: final.headers, responseBody: final.body, error: nil,
+                           timing: timing, mappedLocally: mappedLocally)
+                    var responseHead = HTTPResponseHead(version: head.version, status: HTTPResponseStatus(statusCode: final.statusCode))
+                    responseHead.headers = HTTPHeaders(final.headers.map { ($0.name, $0.value) }).removingHopByHop()
+                    responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(final.body.count))
+                    if !head.isKeepAlive { responseHead.headers.replaceOrAdd(name: "Connection", value: "close") }
+                    var responseBody = context.channel.allocator.buffer(capacity: final.body.count)
+                    responseBody.writeBytes(final.body)
+                    self.writeResponse(context: context, head: responseHead, body: responseBody, keepAlive: head.isKeepAlive)
+                }
+            }
+
+            // Map Local: answer here; the server never sees the request.
+            if let local = outcome?.localResponse {
+                deliver(local, timing: nil, mappedLocally: true)
                 return
             }
 
             // An edited URL may point somewhere else entirely, including http <-> https.
             let target: AbsoluteHTTPTarget
             let useTLS: Bool
-            if request.url == original.url {
-                target = originalTarget
-                useTLS = self.origin != nil
+            if request.url == prepared.url {
+                target = preparedTarget
+                useTLS = preparedTLS
             } else if let parsed = AbsoluteHTTPTarget.parse(url: request.url) {
                 (target, useTLS) = parsed
             } else {
@@ -278,7 +345,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
             }
 
             var requestHeaders = HTTPHeaders(request.headers.map { ($0.name, $0.value) })
-            if request.url != original.url, requestHeaders["Host"].first == originalTarget.authority || requestHeaders["Host"].first == originalTarget.host {
+            if request.url != prepared.url, requestHeaders["Host"].first == preparedTarget.authority || requestHeaders["Host"].first == preparedTarget.host {
                 requestHeaders.replaceOrAdd(name: "Host", value: target.authority)
             }
             var upstreamHead = HTTPRequestHead(version: .http1_1, method: HTTPMethod(rawValue: request.method), uri: target.originForm)
@@ -309,32 +376,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                         headers: response.head.headers.map { CapturedHeader(name: $0.name, value: $0.value) },
                         body: Array(response.body.readableBytesView)
                     )
-                    let responseDecision: EventLoopFuture<BreakpointResolution<HTTPResponseDraft>>
-                    if stages.contains(.response), let breakpoints {
-                        paused.insert(.response)
-                        let promise = loop.makePromise(of: BreakpointResolution<HTTPResponseDraft>.self)
-                        promise.completeWithTask { await breakpoints.editResponse(received, for: request) }
-                        responseDecision = promise.futureResult
-                    } else {
-                        responseDecision = loop.makeSucceededFuture(.proceed(received))
-                    }
-                    responseDecision.whenSuccess { decision in
-                        guard case .proceed(let final) = decision else {
-                            let message = "Response aborted at a breakpoint"
-                            record(request, status: nil, responseHeaders: [], responseBody: [], error: message)
-                            self.respondWithError(context: context, status: .badGateway, message: message, keepAlive: head.isKeepAlive)
-                            return
-                        }
-                        record(request, status: final.statusCode, responseHeaders: final.headers, responseBody: final.body, error: nil,
-                               timing: response.timing)
-                        var responseHead = HTTPResponseHead(version: head.version, status: HTTPResponseStatus(statusCode: final.statusCode))
-                        responseHead.headers = HTTPHeaders(final.headers.map { ($0.name, $0.value) }).removingHopByHop()
-                        responseHead.headers.replaceOrAdd(name: "Content-Length", value: String(final.body.count))
-                        if !head.isKeepAlive { responseHead.headers.replaceOrAdd(name: "Connection", value: "close") }
-                        var responseBody = context.channel.allocator.buffer(capacity: final.body.count)
-                        responseBody.writeBytes(final.body)
-                        self.writeResponse(context: context, head: responseHead, body: responseBody, keepAlive: head.isKeepAlive)
-                    }
+                    deliver(received, timing: response.timing, mappedLocally: false)
                 case .failure(let error):
                     let message = String(describing: error)
                     record(request, status: 502, responseHeaders: [], responseBody: [], error: message)

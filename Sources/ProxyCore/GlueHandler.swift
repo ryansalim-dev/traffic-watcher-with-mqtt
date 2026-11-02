@@ -12,16 +12,21 @@ final class GlueHandler: ChannelDuplexHandler, RemovableChannelHandler {
     private var pendingRead = false
     /// Called with every chunk read on this handler's channel, before it is relayed.
     private let onRead: (ByteBuffer) -> Void
+    /// Turns each chunk read into what is written to the partner; nil relays it as it is.
+    private let transform: ((ByteBuffer) -> ByteBuffer)?
     private let onClose: () -> Void
 
-    private init(onRead: @escaping (ByteBuffer) -> Void, onClose: @escaping () -> Void) {
+    private init(onRead: @escaping (ByteBuffer) -> Void, transform: ((ByteBuffer) -> ByteBuffer)?, onClose: @escaping () -> Void) {
         self.onRead = onRead
+        self.transform = transform
         self.onClose = onClose
     }
 
     static func pair(
         onReadA: @escaping (ByteBuffer) -> Void = { _ in },
         onReadB: @escaping (ByteBuffer) -> Void = { _ in },
+        transformA: ((ByteBuffer) -> ByteBuffer)? = nil,
+        transformB: ((ByteBuffer) -> ByteBuffer)? = nil,
         onClose: @escaping () -> Void = {}
     ) -> (GlueHandler, GlueHandler) {
         var closed = false
@@ -30,8 +35,8 @@ final class GlueHandler: ChannelDuplexHandler, RemovableChannelHandler {
             closed = true
             onClose()
         }
-        let a = GlueHandler(onRead: onReadA, onClose: closeOnce)
-        let b = GlueHandler(onRead: onReadB, onClose: closeOnce)
+        let a = GlueHandler(onRead: onReadA, transform: transformA, onClose: closeOnce)
+        let b = GlueHandler(onRead: onReadB, transform: transformB, onClose: closeOnce)
         a.partner = b
         b.partner = a
         return (a, b)
@@ -49,7 +54,12 @@ final class GlueHandler: ChannelDuplexHandler, RemovableChannelHandler {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let buffer = unwrapInboundIn(data)
         onRead(buffer)
-        partner?.partnerWrite(buffer)
+        if let transform {
+            let output = transform(buffer)
+            if output.readableBytes > 0 { partner?.partnerWrite(output) }
+        } else {
+            partner?.partnerWrite(buffer)
+        }
     }
 
     func channelReadComplete(context: ChannelHandlerContext) {

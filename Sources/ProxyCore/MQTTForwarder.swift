@@ -36,10 +36,14 @@ public final class MQTTForwarder: @unchecked Sendable {
     private let brokerHost: String
     private let brokerPort: Int
     private let tls: TLS?
+    private let rules: LiveRules?
     private var channel: Channel?
 
-    public init(group: EventLoopGroup, sink: CaptureSink, brokerHost: String, brokerPort: Int? = nil, tls: TLS? = nil) {
+    /// - Parameter rules: PUBLISH rewrite rules, read for every packet. Nil relays packets untouched.
+    public init(group: EventLoopGroup, sink: CaptureSink, brokerHost: String, brokerPort: Int? = nil, tls: TLS? = nil,
+                rules: LiveRules? = nil) {
         self.group = group
+        self.rules = rules
         self.sink = sink
         self.brokerHost = brokerHost
         self.brokerPort = brokerPort ?? (tls == nil ? 1883 : 8883)
@@ -52,6 +56,7 @@ public final class MQTTForwarder: @unchecked Sendable {
         let sink = self.sink
         let brokerHost = self.brokerHost
         let brokerPort = self.brokerPort
+        let rules = self.rules
         var serverTLS: NIOSSLContext?
         var clientTLS: NIOSSLContext?
         if let tls {
@@ -76,10 +81,11 @@ public final class MQTTForwarder: @unchecked Sendable {
                     }
                     .connect(host: brokerHost, port: brokerPort)
                     .flatMapThrowing { broker in
-                        let tap = MQTTTap(sink: sink, broker: "\(brokerHost):\(brokerPort)")
+                        let relay = MQTTRelay(sink: sink, broker: "\(brokerHost):\(brokerPort)", rules: rules)
+                        let allocator = client.allocator
                         let (clientSide, brokerSide) = GlueHandler.pair(
-                            onReadA: { tap.receive($0, from: .clientToBroker) },
-                            onReadB: { tap.receive($0, from: .brokerToClient) },
+                            transformA: { allocator.buffer(bytes: relay.relay(Array($0.readableBytesView), from: .clientToBroker)) },
+                            transformB: { allocator.buffer(bytes: relay.relay(Array($0.readableBytesView), from: .brokerToClient)) },
                             onClose: { broker.close(promise: nil) }
                         )
                         if let serverTLS {
