@@ -2,31 +2,43 @@ import Foundation
 import Licensing
 import Observation
 
-/// Build-time licensing settings. The store and product IDs come from the app's Info.plist
+/// Build-time licensing settings. Store IDs come from the app's Info.plist
 /// (`TWLemonSqueezyStoreID`, `TWLemonSqueezyProductIDs`), so release builds set them without code changes.
 public struct LicenseConfiguration: Sendable {
-    public var product: LemonSqueezyClient.Product?
+    /// Stores this build accepts licenses from. New keys are tried against each in order; a stored
+    /// license goes back to the provider that issued it. When moving to another store, put it first
+    /// and keep the old one so existing customers' licenses still validate.
+    public var providers: [any LicenseProvider]
     public var purchaseURL: URL?
     /// When this build was released; nil for development builds.
     public var releaseDate: Date?
 
-    public init(product: LemonSqueezyClient.Product?, purchaseURL: URL?, releaseDate: Date?) {
-        self.product = product
+    public init(providers: [any LicenseProvider], purchaseURL: URL?, releaseDate: Date?) {
+        self.providers = providers
         self.purchaseURL = purchaseURL
         self.releaseDate = releaseDate
     }
 
     /// Reads `TWLemonSqueezyStoreID` (number), `TWLemonSqueezyProductIDs` (comma-separated),
     /// `TWPurchaseURL` and `TWReleaseDate` (`yyyy-MM-dd`) from an Info.plist dictionary.
-    public init(infoDictionary info: [String: Any]) {
+    public init(infoDictionary info: [String: Any], transport: LicenseTransport? = nil) {
+        var providers: [any LicenseProvider] = []
+        if let product = Self.lemonSqueezyProduct(info) {
+            providers.append(LemonSqueezyClient(product: product, transport: transport))
+        }
+        self.providers = providers
+        purchaseURL = (info["TWPurchaseURL"] as? String).flatMap(URL.init(string:))
+        releaseDate = (info["TWReleaseDate"] as? String).flatMap(Self.parseDay)
+    }
+
+    static func lemonSqueezyProduct(_ info: [String: Any]) -> LemonSqueezyClient.Product? {
         let storeID = (info["TWLemonSqueezyStoreID"] as? NSNumber)?.intValue
             ?? (info["TWLemonSqueezyStoreID"] as? String).flatMap { Int($0) }
         let products = Set(((info["TWLemonSqueezyProductIDs"] as? String) ?? "")
             .split(separator: ",")
             .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) })
-        product = storeID.flatMap { $0 > 0 && !products.isEmpty ? LemonSqueezyClient.Product(storeID: $0, productIDs: products) : nil }
-        purchaseURL = (info["TWPurchaseURL"] as? String).flatMap(URL.init(string:))
-        releaseDate = (info["TWReleaseDate"] as? String).flatMap(Self.parseDay)
+        guard let storeID, storeID > 0, !products.isEmpty else { return nil }
+        return LemonSqueezyClient.Product(storeID: storeID, productIDs: products)
     }
 
     static func parseDay(_ string: String) -> Date? {
@@ -49,20 +61,19 @@ public final class LicenseManager {
 
     public let configuration: LicenseConfiguration
     public let policy: LicensePolicy
-    private let client: LemonSqueezyClient?
+    private let providers: [any LicenseProvider]
     private let storage: LicenseStorage
     private let instanceName: String
     private let now: () -> Date
 
     public init(configuration: LicenseConfiguration, storage: LicenseStorage, policy: LicensePolicy = .standard,
-                instanceName: String = LicenseManager.defaultInstanceName,
-                transport: LemonSqueezyClient.Transport? = nil, now: @escaping () -> Date = Date.init) {
+                instanceName: String = LicenseManager.defaultInstanceName, now: @escaping () -> Date = Date.init) {
         self.configuration = configuration
         self.policy = policy
         self.storage = storage
         self.instanceName = instanceName
         self.now = now
-        client = configuration.product.map { LemonSqueezyClient(product: $0, transport: transport) }
+        providers = configuration.providers
         do {
             license = try storage.load()
         } catch {
@@ -80,7 +91,16 @@ public final class LicenseManager {
     }
 
     /// False in builds without store IDs (development builds); activation then explains why it can't run.
-    public var isConfigured: Bool { client != nil }
+    public var isConfigured: Bool { !providers.isEmpty }
+
+    /// Where customers bought their key: the stored license's store, else the one new keys go to first.
+    public var storeName: String? {
+        (license.flatMap { provider(for: $0) } ?? providers.first)?.storeName
+    }
+
+    private func provider(for license: StoredLicense) -> (any LicenseProvider)? {
+        providers.first { $0.id == license.provider }
+    }
 
     /// Saved sessions the free tier keeps; nil when Pro.
     public var sessionLimit: Int? { entitlement.allows(.unlimitedSessions) ? nil : policy.freeSessionLimit }
@@ -88,14 +108,14 @@ public final class LicenseManager {
     public func activate(key rawKey: String) async {
         let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        guard let client else {
+        guard !providers.isEmpty else {
             lastError = "This build isn't connected to the license store. Use a release build from the website to activate Pro."
             return
         }
         isWorking = true
         defer { isWorking = false }
         do {
-            let activated = try await client.activate(key: key, instanceName: instanceName, now: now())
+            let activated = try await activateWithFirstMatchingProvider(key: key)
             try storage.save(activated)
             license = activated
             lastError = nil
@@ -105,13 +125,31 @@ public final class LicenseManager {
         recompute()
     }
 
+    /// Tries each provider in order. A key one store doesn't know may belong to the next; the first
+    /// store's answer is reported when none accepts it. Network errors and other failures stop the search.
+    private func activateWithFirstMatchingProvider(key: String) async throws -> StoredLicense {
+        var firstRefusal: Error?
+        for provider in providers {
+            do {
+                return try await provider.activate(key: key, instanceName: instanceName, now: now())
+            } catch let error as LicenseError {
+                switch error {
+                case .rejected, .wrongProduct: firstRefusal = firstRefusal ?? error
+                default: throw error
+                }
+            }
+        }
+        throw firstRefusal ?? LicenseError.unexpectedResponse
+    }
+
     /// Frees this Mac's activation on the store, then forgets the license here.
     public func deactivate() async {
         guard let license else { return }
         isWorking = true
         defer { isWorking = false }
         do {
-            try await client?.deactivate(license)
+            // A license from a store this build can't reach is only forgotten here.
+            try await provider(for: license)?.deactivate(license)
             try storage.clear()
             self.license = nil
             lastError = nil
@@ -130,11 +168,17 @@ public final class LicenseManager {
     /// Re-validates now. Network failures keep the license (Pro works offline for the grace period);
     /// a refusal from the store revokes it.
     public func refresh() async {
-        guard let license, let client else { return }
+        guard let license, !providers.isEmpty else { return }
+        guard let provider = provider(for: license) else {
+            // Leave the license as is: the offline grace period still applies, and an update that
+            // knows this store again will validate it.
+            lastError = String(describing: LicenseError.unknownProvider(license.provider))
+            return
+        }
         isWorking = true
         defer { isWorking = false }
         do {
-            let refreshed = try await client.validate(license, now: now())
+            let refreshed = try await provider.validate(license, now: now())
             try storage.save(refreshed)
             self.license = refreshed
             lastError = nil

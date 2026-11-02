@@ -6,8 +6,10 @@ public struct StoredLicense: Codable, Equatable, Sendable {
         case active, inactive, expired, disabled
     }
 
+    /// The `LicenseProvider.id` that issued this license; validation and deactivation go back to it.
+    public var provider: String
     public var key: String
-    /// The Lemon Squeezy instance created for this Mac on activation.
+    /// The activation the provider created for this Mac (a Lemon Squeezy instance, a Keygen machine, …).
     public var instanceID: String
     public var status: Status
     public var customerName: String?
@@ -19,8 +21,10 @@ public struct StoredLicense: Codable, Equatable, Sendable {
     /// Last time the store confirmed the license. Pro keeps working offline for a grace period after it.
     public var lastValidatedAt: Date
 
-    public init(key: String, instanceID: String, status: Status, customerName: String? = nil, customerEmail: String? = nil,
+    public init(provider: String = LemonSqueezyClient.providerID, key: String, instanceID: String, status: Status,
+                customerName: String? = nil, customerEmail: String? = nil,
                 purchasedAt: Date, expiresAt: Date? = nil, lastValidatedAt: Date) {
+        self.provider = provider
         self.key = key
         self.instanceID = instanceID
         self.status = status
@@ -29,6 +33,24 @@ public struct StoredLicense: Codable, Equatable, Sendable {
         self.purchasedAt = purchasedAt
         self.expiresAt = expiresAt
         self.lastValidatedAt = lastValidatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider, key, instanceID, status, customerName, customerEmail, purchasedAt, expiresAt, lastValidatedAt
+    }
+
+    /// Licenses saved before providers existed have no `provider`; they all came from Lemon Squeezy.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? LemonSqueezyClient.providerID
+        key = try container.decode(String.self, forKey: .key)
+        instanceID = try container.decode(String.self, forKey: .instanceID)
+        status = try container.decode(Status.self, forKey: .status)
+        customerName = try container.decodeIfPresent(String.self, forKey: .customerName)
+        customerEmail = try container.decodeIfPresent(String.self, forKey: .customerEmail)
+        purchasedAt = try container.decode(Date.self, forKey: .purchasedAt)
+        expiresAt = try container.decodeIfPresent(Date.self, forKey: .expiresAt)
+        lastValidatedAt = try container.decode(Date.self, forKey: .lastValidatedAt)
     }
 
     /// Key with all but the last 4 characters hidden, for display.

@@ -58,7 +58,7 @@ struct LicenseSettings: View {
                 } header: {
                     Text("Activate Pro")
                 } footer: {
-                    Text("Your key is in the email from Lemon Squeezy. To move it to another Mac, deactivate it here first.")
+                    Text("Your key is in the email from \(license.storeName ?? "the store"). To move it to another Mac, deactivate it here first.")
                         .foregroundStyle(.secondary)
                 }
             }

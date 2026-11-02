@@ -287,14 +287,14 @@ final class LicenseManagerTests: XCTestCase {
         final class Queue: @unchecked Sendable { var replies: [String] = [] }
         let queue = Queue()
         queue.replies = replies
+        let client = LemonSqueezyClient(product: Self.product, transport: { _ in
+            if offline { throw URLError(.notConnectedToInternet) }
+            return (Data(queue.replies.removeFirst().utf8), 200)
+        })
         return LicenseManager(
-            configuration: configuration ?? LicenseConfiguration(product: Self.product, purchaseURL: nil, releaseDate: nil),
+            configuration: configuration ?? LicenseConfiguration(providers: [client], purchaseURL: nil, releaseDate: nil),
             storage: FileLicenseStorage(url: directory.appendingPathComponent("license.json")),
             instanceName: "Test Mac",
-            transport: { _ in
-                if offline { throw URLError(.notConnectedToInternet) }
-                return (Data(queue.replies.removeFirst().utf8), 200)
-            },
             now: { now }
         )
     }
@@ -347,7 +347,7 @@ final class LicenseManagerTests: XCTestCase {
     @MainActor
     func testUnconfiguredBuildExplainsWhyActivationFails() async {
         let manager = makeManager(replies: [], now: Date(),
-                                  configuration: LicenseConfiguration(product: nil, purchaseURL: nil, releaseDate: nil))
+                                  configuration: LicenseConfiguration(providers: [], purchaseURL: nil, releaseDate: nil))
         XCTAssertFalse(manager.isConfigured)
         await manager.activate(key: "KEY-1")
         XCTAssertNotNil(manager.lastError)
@@ -361,10 +361,122 @@ final class LicenseManagerTests: XCTestCase {
             "TWPurchaseURL": "https://example.com/buy",
             "TWReleaseDate": "2026-11-01",
         ])
-        XCTAssertEqual(configuration.product, LemonSqueezyClient.Product(storeID: 7, productIDs: [42, 43]))
+        XCTAssertEqual(configuration.providers.map(\.id), [LemonSqueezyClient.providerID])
+        XCTAssertEqual((configuration.providers.first as? LemonSqueezyClient)?.product,
+                       LemonSqueezyClient.Product(storeID: 7, productIDs: [42, 43]))
         XCTAssertEqual(configuration.purchaseURL?.absoluteString, "https://example.com/buy")
         XCTAssertEqual(configuration.releaseDate, Date(timeIntervalSince1970: 1_793_491_200))
-        XCTAssertNil(LicenseConfiguration(infoDictionary: [:]).product)
+        XCTAssertTrue(LicenseConfiguration(infoDictionary: [:]).providers.isEmpty)
+    }
+
+    // MARK: Providers
+
+    /// A store that knows a fixed set of keys, records calls, and can be taken offline.
+    private final class FakeProvider: LicenseProvider, @unchecked Sendable {
+        let id: String
+        let storeName: String
+        let keys: Set<String>
+        var offline = false
+        var validated: [String] = []
+        var deactivated: [String] = []
+
+        init(id: String, keys: Set<String>) {
+            self.id = id
+            storeName = id.capitalized
+            self.keys = keys
+        }
+
+        func activate(key: String, instanceName: String, now: Date) async throws -> StoredLicense {
+            if offline { throw LicenseError.network("offline") }
+            guard keys.contains(key) else { throw LicenseError.rejected("\(id): license_key not found.") }
+            return StoredLicense(provider: id, key: key, instanceID: "\(id)-machine", status: .active,
+                                 purchasedAt: now, lastValidatedAt: now)
+        }
+
+        func validate(_ license: StoredLicense, now: Date) async throws -> StoredLicense {
+            validated.append(license.key)
+            var refreshed = license
+            refreshed.lastValidatedAt = now
+            return refreshed
+        }
+
+        func deactivate(_ license: StoredLicense) async throws {
+            deactivated.append(license.key)
+        }
+    }
+
+    @MainActor
+    private func makeManager(providers: [any LicenseProvider], now: Date) -> LicenseManager {
+        LicenseManager(configuration: LicenseConfiguration(providers: providers, purchaseURL: nil, releaseDate: nil),
+                       storage: FileLicenseStorage(url: directory.appendingPathComponent("license.json")),
+                       instanceName: "Test Mac", now: { now })
+    }
+
+    @MainActor
+    func testActivationFallsThroughToTheProviderThatKnowsTheKey() async {
+        let now = Date(timeIntervalSince1970: 1_793_500_000)
+        let keygen = FakeProvider(id: "keygen", keys: ["NEW-KEY"])
+        let lemon = FakeProvider(id: "lemonsqueezy", keys: ["OLD-KEY"])
+        let manager = makeManager(providers: [keygen, lemon], now: now)
+
+        await manager.activate(key: "OLD-KEY")
+        XCTAssertNil(manager.lastError)
+        XCTAssertEqual(manager.license?.provider, "lemonsqueezy")
+        XCTAssertEqual(manager.storeName, "Lemonsqueezy")
+        XCTAssertTrue(manager.entitlement.isPro)
+
+        // A key nobody knows reports the first store's refusal.
+        await manager.activate(key: "TYPO")
+        XCTAssertEqual(manager.lastError, String(describing: LicenseError.rejected("keygen: license_key not found.")))
+        XCTAssertEqual(manager.license?.key, "OLD-KEY")
+    }
+
+    @MainActor
+    func testNetworkFailureStopsActivationInsteadOfTryingTheNextStore() async {
+        let keygen = FakeProvider(id: "keygen", keys: [])
+        keygen.offline = true
+        let lemon = FakeProvider(id: "lemonsqueezy", keys: ["OLD-KEY"])
+        let manager = makeManager(providers: [keygen, lemon], now: Date())
+        await manager.activate(key: "OLD-KEY")
+        XCTAssertNil(manager.license)
+        XCTAssertEqual(manager.lastError, String(describing: LicenseError.network("offline")))
+    }
+
+    @MainActor
+    func testValidationAndDeactivationGoToTheIssuingProvider() async {
+        let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
+        let keygen = FakeProvider(id: "keygen", keys: [])
+        let lemon = FakeProvider(id: "lemonsqueezy", keys: ["OLD-KEY"])
+        await makeManager(providers: [keygen, lemon], now: activatedAt).activate(key: "OLD-KEY")
+
+        let manager = makeManager(providers: [keygen, lemon], now: activatedAt + 4 * 86_400)
+        await manager.refreshIfNeeded()
+        XCTAssertEqual(lemon.validated, ["OLD-KEY"])
+        XCTAssertTrue(keygen.validated.isEmpty)
+
+        await manager.deactivate()
+        XCTAssertEqual(lemon.deactivated, ["OLD-KEY"])
+        XCTAssertNil(manager.license)
+    }
+
+    @MainActor
+    func testLicenseFromARemovedProviderIsKeptButNotValidated() async {
+        let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
+        await makeManager(providers: [FakeProvider(id: "lemonsqueezy", keys: ["OLD-KEY"])], now: activatedAt)
+            .activate(key: "OLD-KEY")
+
+        let keygen = FakeProvider(id: "keygen", keys: [])
+        let manager = makeManager(providers: [keygen], now: activatedAt + 4 * 86_400)
+        await manager.refreshIfNeeded()
+        XCTAssertTrue(keygen.validated.isEmpty)
+        XCTAssertEqual(manager.license?.key, "OLD-KEY")
+        XCTAssertTrue(manager.entitlement.isPro, "the offline grace period still applies")
+        XCTAssertEqual(manager.lastError, String(describing: LicenseError.unknownProvider("lemonsqueezy")))
+
+        // Forgetting it works even though that store can't be reached from this build.
+        await manager.deactivate()
+        XCTAssertNil(manager.license)
+        XCTAssertTrue(keygen.deactivated.isEmpty)
     }
 }
 
