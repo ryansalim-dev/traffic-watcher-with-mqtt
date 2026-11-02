@@ -275,8 +275,6 @@ struct BreakpointEditor: View {
 struct BreakpointSettings: View {
     @Bindable var center: BreakpointCenter
 
-    private static let methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
-
     var body: some View {
         Form {
             if !center.isAllowed {
@@ -296,20 +294,15 @@ struct BreakpointSettings: View {
                 ForEach($center.rules) { $rule in
                     HStack(spacing: 8) {
                         Toggle("Enabled", isOn: $rule.isEnabled).labelsHidden()
-                        Picker("Method", selection: Binding(get: { $rule.wrappedValue.method ?? "" }, set: { $rule.wrappedValue.method = $0.isEmpty ? nil : $0 })) {
-                            Text("Any").tag("")
-                            ForEach(Self.methods, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 90)
-                        TextField("Pattern", text: $rule.pattern, prompt: Text("api.example.com/v2/*"))
-                            .labelsHidden()
-                            .font(.callout.monospaced())
-                        Picker("Stop at", selection: Binding(get: { StageChoice($rule.wrappedValue.stages) }, set: { $rule.wrappedValue.stages = $0.stages })) {
-                            ForEach(StageChoice.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 105)
+                        Dropdown(title: "Method",
+                                 selection: Binding(get: { $rule.wrappedValue.method ?? "" }, set: { $rule.wrappedValue.method = $0.isEmpty ? nil : $0 }),
+                                 options: HTTPRuleEditor.methodOptions, monospaced: true)
+                            .frame(width: 96)
+                        BoxedTextField(title: "Pattern", text: $rule.pattern, prompt: "api.example.com/v2/*", monospaced: true)
+                        Dropdown(title: "Stop at",
+                                 selection: Binding(get: { StageChoice($rule.wrappedValue.stages) }, set: { $rule.wrappedValue.stages = $0.stages }),
+                                 options: StageChoice.allCases.map { ($0, $0.rawValue) })
+                            .frame(width: 112)
                         Button {
                             center.rules.removeAll { $0.id == rule.id }
                         } label: {

@@ -292,7 +292,6 @@ struct SessionDetail: View {
                             .disabled(session.eventCount == 0 && !isLive)
                         }
                         SessionExportMenu(model: model, session: session)
-                        .fixedSize()
                         Spacer()
                         Button(role: .destructive) {
                             confirmingDelete = true
@@ -467,19 +466,14 @@ struct SessionExportMenu: View {
     var title = "Export"
 
     var body: some View {
-        Menu {
-            Button("HTTP as HAR…") {
+        DropdownMenu(title, systemImage: "square.and.arrow.up", style: .boxed) {
+            [.button("HTTP as HAR…", enabled: (session.kindCounts["http"] ?? 0) > 0) {
                 SessionExport.save(name: "\(fileName).har", type: .json) { try model.exportHAR(session: session.id) }
-            }
-            .disabled((session.kindCounts["http"] ?? 0) == 0)
-            Button("MQTT as JSON Lines…") {
+            },
+             .button("MQTT as JSON Lines…", enabled: (session.kindCounts["mqtt"] ?? 0) > 0) {
                 SessionExport.save(name: "\(fileName).jsonl", type: .plainText) { try model.exportMQTT(session: session.id) }
-            }
-            .disabled((session.kindCounts["mqtt"] ?? 0) == 0)
-        } label: {
-            Label(title, systemImage: "square.and.arrow.up")
+            }]
         }
-        .fixedSize()
     }
 
     private var fileName: String {
@@ -627,7 +621,6 @@ struct ReplacedSessionRow: View {
             SessionKindBar(counts: session.kindCounts, total: session.eventCount)
                 .frame(width: 44, height: 4)
             SessionExportMenu(model: model, session: session, title: "Export…")
-                .controlSize(.small)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

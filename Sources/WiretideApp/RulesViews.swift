@@ -216,17 +216,15 @@ struct RulesList: View {
             }
 
             HStack(spacing: 6) {
-                Menu {
-                    Button("Map Local") { center.addHTTPRule(kind: .mapLocal) }
-                    Button("Map Remote") { center.addHTTPRule(kind: .mapRemote) }
-                    Button("Rewrite") { center.addHTTPRule(kind: .rewrite) }
-                    Divider()
-                    Button("MQTT Rewrite") { center.addMQTTRule() }
-                } label: {
-                    Label("Add Rule", systemImage: "plus")
+                DropdownMenu("Add Rule", systemImage: "plus") {
+                    [.header("HTTP"),
+                     .button("Map Local") { center.addHTTPRule(kind: .mapLocal) },
+                     .button("Map Remote") { center.addHTTPRule(kind: .mapRemote) },
+                     .button("Rewrite") { center.addHTTPRule(kind: .rewrite) },
+                     .divider,
+                     .header("MQTT"),
+                     .button("MQTT Rewrite") { center.addMQTTRule() }]
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
                 .help("Add a rule")
                 Spacer()
             }
@@ -398,6 +396,8 @@ struct HTTPRuleEditor: View {
     let rows: [TrafficRow]
 
     static let methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    /// "Any" (stored as an empty string) and then every method, for a method dropdown.
+    static let methodOptions: [(value: String, title: String)] = [("", "Any")] + methods.map { ($0, $0) }
 
     var body: some View {
         let matches = RewriteCenter.matchingURLs(rule, in: rows)
@@ -413,12 +413,9 @@ struct HTTPRuleEditor: View {
                 }
                 HStack(alignment: .bottom, spacing: 10) {
                     FieldGroup(label: "Method") {
-                        Picker("Method", selection: Binding(get: { rule.method ?? "" }, set: { rule.method = $0.isEmpty ? nil : $0 })) {
-                            Text("Any").tag("")
-                            ForEach(Self.methods, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 96)
+                        Dropdown(title: "Method", selection: Binding(get: { rule.method ?? "" }, set: { rule.method = $0.isEmpty ? nil : $0 }),
+                                 options: Self.methodOptions, monospaced: true)
+                            .frame(width: 96)
                     }
                     FieldGroup(label: "URL pattern") {
                         BoxedTextField(title: "Pattern", text: $rule.pattern, prompt: "api.example.com/v2/*", monospaced: true)
@@ -722,23 +719,14 @@ struct OperationsEditor: View {
                 HStack {
                     CapsLabel("Edits · applied in order")
                     Spacer()
-                    Menu {
-                        Section("Request") {
-                            ForEach(RewriteOperation.Target.allCases.filter { $0.applies(to: .request) }, id: \.self) { target in
-                                Button(target.title) { add(.request, target) }
-                            }
+                    DropdownMenu("Add Edit", systemImage: "plus") {
+                        [RewriteOperation.Phase.request, .response].flatMap { phase -> [DropdownItem] in
+                            [DropdownItem.header(phase == .request ? "Request" : "Response")]
+                                + RewriteOperation.Target.allCases.filter { $0.applies(to: phase) }.map { target -> DropdownItem in
+                                    .button(target.title) { add(phase, target) }
+                                }
                         }
-                        Section("Response") {
-                            ForEach(RewriteOperation.Target.allCases.filter { $0.applies(to: .response) }, id: \.self) { target in
-                                Button(target.title) { add(.response, target) }
-                            }
-                        }
-                    } label: {
-                        Label("Add Edit", systemImage: "plus")
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .font(.system(size: 12, weight: .medium))
                 }
                 if operations.isEmpty {
                     Text("No edits yet. Add one to change the request before it's sent or the response before the app sees it.")
@@ -771,18 +759,13 @@ struct OperationRow: View {
             HStack(spacing: 8) {
                 TypePill(text: operation.phase == .request ? "REQUEST" : "RESPONSE",
                          color: operation.phase == .request ? Theme.get : Theme.success, fixedWidth: 70)
-                Picker("Target", selection: targetBinding) {
-                    ForEach(RewriteOperation.Target.allCases.filter { $0.applies(to: operation.phase) }, id: \.self) {
-                        Text($0.title).tag($0)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-                Picker("Action", selection: $operation.action) {
-                    ForEach(operation.target.actions, id: \.self) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .fixedSize()
+                Dropdown(title: "Target", selection: targetBinding,
+                         options: RewriteOperation.Target.allCases.filter { $0.applies(to: operation.phase) }.map { ($0, $0.title) },
+                         size: .compact)
+                    .fixedSize()
+                Dropdown(title: "Action", selection: $operation.action,
+                         options: operation.target.actions.map { ($0, $0.title) }, size: .compact)
+                    .fixedSize()
                 Spacer()
                 Button {
                     operation.phase = operation.phase == .request ? .response : .request
@@ -936,19 +919,14 @@ struct MQTTRuleEditor: View {
                     HStack {
                         CapsLabel("Edits · applied in order")
                         Spacer()
-                        Menu {
-                            ForEach(MQTTRewriteOperation.Target.allCases, id: \.self) { target in
-                                Button(target.title) {
+                        DropdownMenu("Add Edit", systemImage: "plus") {
+                            MQTTRewriteOperation.Target.allCases.map { target -> DropdownItem in
+                                .button(target.title) {
                                     rule.operations.append(MQTTRewriteOperation(target: target, action: target.actions[0],
                                                                                 value: target == .retain ? "true" : ""))
                                 }
                             }
-                        } label: {
-                            Label("Add Edit", systemImage: "plus")
                         }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .font(.system(size: 12, weight: .medium))
                     }
                     ForEach($rule.operations) { $operation in
                         MQTTOperationRow(operation: $operation) {
@@ -975,19 +953,14 @@ struct MQTTOperationRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 TypePill(text: "PUBLISH", color: Theme.mqtt, fixedWidth: 70)
-                Picker("Target", selection: Binding(get: { operation.target }, set: { target in
+                Dropdown(title: "Target", selection: Binding(get: { operation.target }, set: { target in
                     operation.target = target
                     if !target.actions.contains(operation.action) { operation.action = target.actions[0] }
-                })) {
-                    ForEach(MQTTRewriteOperation.Target.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .fixedSize()
-                Picker("Action", selection: $operation.action) {
-                    ForEach(operation.target.actions, id: \.self) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .fixedSize()
+                }), options: MQTTRewriteOperation.Target.allCases.map { ($0, $0.title) }, size: .compact)
+                    .fixedSize()
+                Dropdown(title: "Action", selection: $operation.action,
+                         options: operation.target.actions.map { ($0, $0.title) }, size: .compact)
+                    .fixedSize()
                 Spacer()
                 Button(action: remove) {
                     Image(systemName: "trash")

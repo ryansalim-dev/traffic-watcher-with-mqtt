@@ -196,15 +196,11 @@ struct ScriptsList: View {
             }
 
             HStack(spacing: 6) {
-                Menu {
-                    ForEach(ScriptTemplate.allCases) { template in
-                        Button(template.title) { center.addScript(template) }
+                DropdownMenu("New Script", systemImage: "plus") {
+                    [.header("Start from a template")] + ScriptTemplate.allCases.map { template -> DropdownItem in
+                        .button(template.title) { center.addScript(template) }
                     }
-                } label: {
-                    Label("New Script", systemImage: "plus")
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
                 .help("Start a script from a template")
                 Spacer()
             }
@@ -318,12 +314,9 @@ struct ScriptEditor: View {
             HStack(alignment: .bottom, spacing: 16) {
                 HStack(alignment: .bottom, spacing: 8) {
                     FieldGroup(label: "Method") {
-                        Picker("Method", selection: Binding(get: { script.method ?? "" }, set: { script.method = $0.isEmpty ? nil : $0 })) {
-                            Text("Any").tag("")
-                            ForEach(HTTPRuleEditor.methods, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 84)
+                        Dropdown(title: "Method", selection: Binding(get: { script.method ?? "" }, set: { script.method = $0.isEmpty ? nil : $0 }),
+                                 options: HTTPRuleEditor.methodOptions, monospaced: true)
+                            .frame(width: 96)
                     }
                     FieldGroup(label: "HTTP · URL pattern") {
                         BoxedTextField(title: "URL pattern", text: $script.urlPattern, prompt: "api.example.com/*", monospaced: true)
@@ -335,11 +328,9 @@ struct ScriptEditor: View {
                         BoxedTextField(title: "Topic filter", text: $script.topicFilter, prompt: "home/#", monospaced: true)
                     }
                     FieldGroup(label: "Direction") {
-                        Picker("Direction", selection: $script.direction) {
-                            ForEach(MQTTRule.Direction.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 136)
+                        Dropdown(title: "Direction", selection: $script.direction,
+                                 options: MQTTRule.Direction.allCases.map { ($0, $0.title) })
+                            .frame(width: 140)
                     }
                 }
                 .frame(maxWidth: .infinity)

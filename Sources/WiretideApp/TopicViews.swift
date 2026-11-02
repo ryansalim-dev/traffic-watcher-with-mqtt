@@ -317,16 +317,10 @@ struct FieldChart: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if series.count > 1 {
-                    Menu {
-                        ForEach(series) { item in
-                            Button(item.field) { onSelect(item.field) }
-                        }
-                    } label: {
-                        Text(selected.field).font(.system(size: 12, weight: .medium, design: .monospaced))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Chart another numeric field")
+                    Dropdown(title: "Chart another numeric field",
+                             selection: Binding(get: { selected.field }, set: { onSelect($0) }),
+                             options: series.map { ($0.field, $0.field) }, size: .compact, monospaced: true)
+                        .fixedSize()
                 } else {
                     Text(selected.field).font(.system(size: 12, weight: .medium, design: .monospaced))
                 }
