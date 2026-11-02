@@ -280,7 +280,7 @@ public enum ScriptTemplate: String, CaseIterable, Identifiable, Sendable {
         case .editJSONResponse: "Change values in the response JSON before the app sees them."
         case .mockResponse: "Answer some requests locally with respond(), decided in code."
         case .httpBoth: "Log what goes out and edit what comes back."
-        case .mqttPayload: "Rewrite PUBLISH payloads and topics as they pass a forwarder."
+        case .mqttPayload: "Rewrite PUBLISH payloads and topics on their way through Wiretide."
         }
     }
 
@@ -341,7 +341,7 @@ public enum ScriptTemplate: String, CaseIterable, Identifiable, Sendable {
             """)
         case .mqttPayload:
             UserScript(name: "Transform payloads", source: """
-            // Runs for each matching PUBLISH through a forwarder.
+            // Runs for each matching PUBLISH, through a forwarder or over WebSockets.
             function onPublish(message) {
               if (message.json && typeof message.json.celsius === "number") {
                 message.json.fahrenheit = message.json.celsius * 9 / 5 + 32;

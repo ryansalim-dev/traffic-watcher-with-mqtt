@@ -38,6 +38,7 @@ final class WebSocketTap {
     private let url: String
     private let request: HTTPExchange
     private let rules: LiveRules?
+    private let scripts: LiveScripts?
     private var state = State.awaitingHandshake(response: [])
     private var client = Stream()
     private var server = Stream()
@@ -46,11 +47,13 @@ final class WebSocketTap {
 
     /// - Parameter request: the handshake as captured so far (response fields are filled in here).
     /// - Parameter rules: MQTT rewrite rules, read for every packet.
-    init(sink: CaptureSink, request: HTTPExchange, rules: LiveRules? = nil) {
+    /// - Parameter scripts: scripts with `onPublish`, run after the rules.
+    init(sink: CaptureSink, request: HTTPExchange, rules: LiveRules? = nil, scripts: LiveScripts? = nil) {
         self.sink = sink
         self.url = request.url
         self.request = request
         self.rules = rules
+        self.scripts = scripts
     }
 
     /// Takes bytes read from the client and returns the bytes to write to the server.
@@ -92,7 +95,7 @@ final class WebSocketTap {
             }
             let subprotocol = head.headers.first { $0.name.lowercased() == "sec-websocket-protocol" }?.value ?? ""
             if subprotocol.lowercased().hasPrefix("mqtt") {
-                relay = MQTTRelay(sink: sink, broker: url, rules: rules)
+                relay = MQTTRelay(sink: sink, broker: url, rules: rules, scripts: scripts)
             }
             state = .frames
             let headLength = end + 4 - previous

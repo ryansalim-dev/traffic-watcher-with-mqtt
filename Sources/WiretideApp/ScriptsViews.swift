@@ -571,7 +571,7 @@ struct ScriptReference: View {
         ("Hooks", [
             ("onRequest(request)", "Before the request goes out. Return it, or return respond(…) to answer locally."),
             ("onResponse(request, response)", "Before the response reaches the app."),
-            ("onPublish(message)", "For each PUBLISH through a forwarder, in either direction."),
+            ("onPublish(message)", "For each PUBLISH through a forwarder or over WebSockets, in either direction."),
         ]),
         ("request", [
             ("method, url", "Change either to send the request elsewhere."),

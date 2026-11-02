@@ -955,7 +955,7 @@ struct MQTTRuleEditor: View {
                             rule.operations.removeAll { $0.id == operation.id }
                         }
                     }
-                    Text("Applies to MQTT over TCP and TLS through a forwarder (Settings › MQTT). QoS and packet IDs are kept, so acknowledgements still match.")
+                    Text("Applies to MQTT through a forwarder (Settings › MQTT) and to MQTT over WebSockets through the proxy. QoS and packet IDs are kept, so acknowledgements still match.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)

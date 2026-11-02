@@ -72,7 +72,7 @@ function onPublish(message) {            // topic, payload, json, retain; qos, d
 }
 ```
 
-Headers read case-insensitively, and binary bodies come as `bodyBase64` / `payloadBase64`. `console.log` writes to the window's console. A call that runs longer than one second is stopped and the request goes on unchanged. Top-level variables keep their values until the script is edited. MQTT scripts apply to TCP and TLS forwarders; QoS and packet IDs are kept so acknowledgements still match.
+Headers read case-insensitively, and binary bodies come as `bodyBase64` / `payloadBase64`. `console.log` writes to the window's console. A call that runs longer than one second is stopped and the request goes on unchanged. Top-level variables keep their values until the script is edited. MQTT scripts apply to forwarders (TCP and TLS) and MQTT over WebSockets through the proxy; QoS and packet IDs are kept so acknowledgements still match.
 
 ## Develop
 

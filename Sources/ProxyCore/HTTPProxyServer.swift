@@ -516,7 +516,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                     context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
                     self.respondWithError(context: context, status: .badGateway, message: failed.error!)
                 case .success(let upstream):
-                    let tap = WebSocketTap(sink: self.sink, request: exchange, rules: liveRules)
+                    let tap = WebSocketTap(sink: self.sink, request: exchange, rules: liveRules, scripts: self.configuration.scripts)
                     let allocator = upstream.allocator
                     let (clientSide, serverSide) = GlueHandler.pair(
                         transformA: { allocator.buffer(bytes: tap.receiveFromClient(Array($0.readableBytesView))) },
