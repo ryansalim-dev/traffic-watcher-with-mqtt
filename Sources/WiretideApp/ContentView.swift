@@ -47,6 +47,14 @@ struct ContentView: View {
             }
             .frame(minWidth: 460)
             .background(Theme.canvas)
+            // The system toolbar material tints the mockup's graphite toward neutral gray, so the toolbar is made
+            // transparent and this strip, stretched up into the toolbar's safe area, paints the mockup's color.
+            .overlay(alignment: .top) {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                    .background(Theme.bar.ignoresSafeArea(edges: .top))
+                    .offset(y: -1)
+                    .allowsHitTesting(false)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
@@ -120,7 +128,7 @@ struct ContentView: View {
                 }
             }
         }
-        .toolbarBackground(Theme.bar, for: .windowToolbar)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .tint(Theme.accent)
         .overlay(alignment: .top) {
             if let stagedSheet { stagedSheet }
