@@ -37,6 +37,8 @@ struct WiretideApp: App {
             case .ready(let model, let storage, let license, _):
                 ContentView(model: model, certificates: storage, license: license)
                     .frame(minWidth: 1000, minHeight: 600)
+                    .onAppear { updates.follow(license) }
+                    .onChange(of: license.entitlement) { updates.follow(license) }
             case .failed(let message):
                 ContentUnavailableView("Wiretide could not start", systemImage: "xmark.octagon", description: Text(message))
                     .frame(minWidth: 500, minHeight: 300)
@@ -53,6 +55,13 @@ struct WiretideApp: App {
         Window("Map & Rewrite", id: RulesWindow.id) {
             if let model = setup.model {
                 RulesWindow(model: model)
+            }
+        }
+        .windowResizability(.contentMinSize)
+
+        Window("Saved Sessions", id: SessionsWindow.id) {
+            if case .ready(let model, _, let license, _) = setup {
+                SessionsWindow(model: model, license: license)
             }
         }
         .windowResizability(.contentMinSize)
@@ -101,6 +110,8 @@ enum AppSetup {
             formatter.timeStyle = .short
             let store = try CaptureStore(path: support.appendingPathComponent("captures.sqlite").path,
                                          sessionName: formatter.string(from: Date()))
+            // Every launch starts a session; drop earlier ones that never recorded anything.
+            try? store.deleteEmptySessions()
 
             var configuration = EngineConfiguration()
             if let data = UserDefaults.standard.data(forKey: configurationKey),
@@ -191,9 +202,17 @@ struct CaptureCommands: Commands {
             .keyboardShortcut("r")
             .disabled(model == nil)
 
-            Button("New Session") { model?.newSession() }
+            Button("New Session") { model?.newSession(named: SessionNames.now()) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model == nil)
+
+            Button("Saved Sessions…") { model?.sessionsPresented = true }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(model == nil)
+
+            Button("Back to Live Capture") { model?.returnToLive() }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(model?.viewedSession == nil)
 
             Divider()
 

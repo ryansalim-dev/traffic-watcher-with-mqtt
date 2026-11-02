@@ -37,7 +37,7 @@ struct ContentView: View {
     }
 
     private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
-    private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty }
+    private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty && model.viewedSession == nil }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -53,7 +53,14 @@ struct ContentView: View {
                     SetupView(model: model)
                 } else {
                     TrafficTimeline(model: model, density: density)
-                        .safeAreaInset(edge: .top, spacing: 0) { FilterBar(model: model) }
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            VStack(spacing: 0) {
+                                if let session = model.viewedSession {
+                                    SavedSessionBanner(session: session) { model.returnToLive() }
+                                }
+                                FilterBar(model: model)
+                            }
+                        }
                 }
             }
             .frame(minWidth: 460)
@@ -164,12 +171,18 @@ struct ContentView: View {
             model.rewrites.isPresented = false
             if presentsSheets { openWindow(id: RulesWindow.id) }
         }
+        .onChange(of: model.sessionsPresented) {
+            guard model.sessionsPresented else { return }
+            model.sessionsPresented = false
+            if presentsSheets { openWindow(id: SessionsWindow.id) }
+        }
         .onChange(of: model.scripts.isPresented) {
             guard model.scripts.isPresented else { return }
             model.scripts.isPresented = false
             if presentsSheets { openWindow(id: ScriptsWindow.id) }
         }
         .task {
+            model.reloadSessions()
             model.sessionLimit = license.sessionLimit
             model.apply(license.entitlement)
             await license.refreshIfNeeded()
@@ -269,10 +282,11 @@ struct RecordingCapsule: View {
     }
 
     private var countLabel: String {
+        let live = model.liveTimeline
         if model.section == .mqtt {
-            return "\(model.count(in: .mqtt).formatted()) packets"
+            return "\(live.lazy.filter(TrafficSection.mqtt.includes).count.formatted()) packets"
         }
-        return "\(model.rows.count.formatted()) events"
+        return "\(live.count.formatted()) events"
     }
 
     static func elapsed(from start: Date, to now: Date) -> String {
@@ -605,6 +619,28 @@ struct SidebarView: View {
                         .help("Connect your app to localhost:\(String(forwarder.listenPort)) to capture \(forwarder.label)")
                     }
                 } header: { SidebarHeader("Brokers") }
+            }
+            let saved = model.sessions.filter { !model.isLive($0) }
+            if !saved.isEmpty {
+                Section {
+                    ForEach(saved.prefix(3)) { session in
+                        SidebarSessionRow(session: session, isOn: model.viewedSession?.id == session.id) {
+                            if model.viewedSession?.id == session.id { model.returnToLive() } else { model.openSession(session.id) }
+                        }
+                    }
+                    Button {
+                        model.sessionsPresented = true
+                    } label: {
+                        HStack {
+                            Text(saved.count > 3 ? "All \(saved.count) Sessions…" : "Manage Sessions…")
+                            Spacer()
+                        }
+                        .foregroundStyle(Theme.accent)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename, export or delete saved sessions (⇧⌘O)")
+                } header: { SidebarHeader("Saved Sessions") }
             }
             if !model.pinnedHosts.isEmpty {
                 Section {

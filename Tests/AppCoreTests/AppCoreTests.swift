@@ -334,6 +334,24 @@ final class LicenseManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testUpdatesAreLimitedToTheLicensesWindow() async {
+        let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
+        let manager = makeManager(replies: [Self.reply("activated")], now: activatedAt)
+        XCTAssertNil(manager.updatesCoveredUntil, "without a license every update is offered")
+        await manager.activate(key: "KEY-1")
+        // The reply's purchase date is 2026-09-21T14:13:20Z, so updates are covered until 2027-09-21T14:13:20Z.
+        let until = try? XCTUnwrap(manager.updatesCoveredUntil)
+        XCTAssertEqual(until, Date(timeIntervalSince1970: 1_821_536_000))
+        let day: TimeInterval = 86_400
+        XCTAssertTrue(LicenseManager.updateIsCovered(published: until! - 30 * day, coveredUntil: until))
+        XCTAssertTrue(LicenseManager.updateIsCovered(published: until! + 3600, coveredUntil: until),
+                      "a release from the last covered day counts, like TWReleaseDate")
+        XCTAssertFalse(LicenseManager.updateIsCovered(published: until! + day, coveredUntil: until))
+        XCTAssertFalse(LicenseManager.updateIsCovered(published: nil, coveredUntil: until))
+        XCTAssertTrue(LicenseManager.updateIsCovered(published: until! + 400 * day, coveredUntil: nil))
+    }
+
+    @MainActor
     func testCaptivePortalDoesNotRevoke() async {
         let activatedAt = Date(timeIntervalSince1970: 1_793_500_000)
         await makeManager(replies: [Self.reply("activated")], now: activatedAt).activate(key: "KEY-1")
@@ -530,6 +548,68 @@ final class SessionLimitTests: XCTestCase {
         model.sessionLimit = nil
         model.newSession(named: "S6")
         XCTAssertEqual(try store.sessions().count, 4)
+    }
+}
+
+final class SavedSessionTests: XCTestCase {
+    @MainActor
+    func testOpenSavedSessionWhileLiveCaptureContinues() async throws {
+        let store = try CaptureStore(path: ":memory:", sessionName: "Monday")
+        let model = CaptureViewModel(store: store, engine: nil)
+        let monday = store.currentSession
+        for event in SampleTraffic.events() { model.ingest(event) }
+        let mondayCount = model.rows.count
+        model.newSession(named: "Tuesday")
+        model.ingest(SampleTraffic.events()[1])
+        XCTAssertEqual(model.rows.count, 1)
+
+        model.reloadSessions()
+        XCTAssertEqual(model.sessions.map(\.name), ["Tuesday", "Monday"])
+        let saved = try XCTUnwrap(model.sessions.last)
+        XCTAssertEqual(saved.eventCount, mondayCount)
+        XCTAssertGreaterThan(saved.kindCounts["http"] ?? 0, 0)
+        XCTAssertGreaterThan(saved.kindCounts["mqtt"] ?? 0, 0)
+        XCTAssertNotNil(saved.lastEventAt)
+        XCTAssertTrue(model.isLive(model.sessions[0]))
+
+        model.openSession(monday)
+        XCTAssertEqual(model.viewedSession?.name, "Monday")
+        XCTAssertEqual(model.rows.count, mondayCount)
+        XCTAssertNotEqual(model.topicTree, TopicTree(), "the topic tree is rebuilt from the saved packets")
+        model.searchText = "kitchen"
+        XCTAssertFalse(model.visibleRows.isEmpty, "search runs on the session on screen")
+        model.searchText = ""
+
+        // Live traffic keeps landing in Tuesday, behind the saved session.
+        model.ingest(SampleTraffic.events()[1])
+        XCTAssertEqual(model.rows.count, mondayCount)
+        XCTAssertEqual(model.liveTimeline.count, 2)
+        XCTAssertFalse(try model.exportHAR().isEmpty)
+
+        model.returnToLive()
+        XCTAssertNil(model.viewedSession)
+        XCTAssertEqual(model.rows.count, 2)
+
+        model.renameSession(monday, to: "  Login bug  ")
+        XCTAssertEqual(model.sessions.last?.name, "Login bug")
+        model.openSession(monday)
+        model.deleteSession(monday)
+        XCTAssertNil(model.viewedSession, "deleting the session on screen goes back to live")
+        XCTAssertEqual(model.rows.count, 2)
+        XCTAssertEqual(model.sessions.map(\.name), ["Tuesday"])
+        model.deleteSession(store.currentSession)
+        XCTAssertEqual(model.sessions.count, 1, "the live session can't be deleted")
+    }
+
+    func testEmptySessionsFromEarlierLaunchesAreRemoved() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("Empty-\(UUID().uuidString).sqlite").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let first = try CaptureStore(path: path, sessionName: "Kept")
+        first.record(SampleTraffic.events()[1])
+        _ = try CaptureStore(path: path, sessionName: "Empty launch")
+        let latest = try CaptureStore(path: path, sessionName: "Now")
+        XCTAssertEqual(try latest.deleteEmptySessions(), 1)
+        XCTAssertEqual(try latest.sessions().map(\.name), ["Now", "Kept"])
     }
 }
 

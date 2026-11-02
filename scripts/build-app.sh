@@ -54,6 +54,8 @@ lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/Wiretide"
 lipo -create "${HELPERS[@]}" -output "$APP/Contents/MacOS/WiretideHelper"
 cp Packaging/app.wiretide.Wiretide.Helper.plist "$APP/Contents/Library/LaunchDaemons/"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+# App icon, drawn by scripts/make-icon.py.
+iconutil -c icns Packaging/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 # SwiftPM resource bundles, if any target gains resources later.
 find "$BIN" -maxdepth 1 -name '*.bundle' -exec ditto {} "$APP/Contents/Resources/" \; 2>/dev/null || true
 
