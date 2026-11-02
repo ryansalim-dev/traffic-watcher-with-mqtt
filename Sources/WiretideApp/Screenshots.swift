@@ -132,7 +132,65 @@ enum Screenshots {
         try await shootScripts(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
         try await shootSessions(model: model, storage: storage, scratch: scratch, freeLicense: freeLicense, proLicense: proLicense,
                                 into: directory)
+        try await shootSessionLimit(storage: storage, freeLicense: freeLicense, into: directory)
         await model.stopCapture()
+    }
+
+    /// Free tier with its one saved session: the Saved Sessions window, and New Session asking before it replaces.
+    private static func shootSessionLimit(storage: CertificateStorage, freeLicense: LicenseManager, into directory: URL) async throws {
+        let store = try CaptureStore(path: ":memory:", sessionName: "seed")
+        let hour: TimeInterval = 3_600
+        for (name, offset) in [("Thermostat firmware 4.2.1", -26 * hour)] {
+            let start = Date().addingTimeInterval(offset)
+            try store.startSession(named: name, createdAt: start)
+            for event in SampleTraffic.events(startingAt: start.addingTimeInterval(5)) {
+                switch event {
+                case .tlsInterceptionFailed, .tunnelClosed, .mqttDecodingFailed, .webSocketDecodingFailed: continue
+                default: store.record(event)
+                }
+            }
+        }
+        try store.startSession(named: "Smart home app, Nov 2")
+        try store.deleteEmptySessions()
+        let model = CaptureViewModel(store: store, engine: nil)
+        for event in SampleTraffic.events() { model.ingest(event) }
+        model.savedSessionLimit = freeLicense.savedSessionLimit
+        model.reloadSessions()
+        model.section = .all
+
+        let windowSize = NSSize(width: 900, height: 600)
+        try await shoot(SessionsWindow(model: model, license: freeLicense), size: windowSize, dark: false,
+                        name: "34-sessions-free", into: directory, title: "Saved Sessions")
+
+        let prompt = try unwrapped(model.sessionLimitPrompt(forNewSessionNamed: "Nov 2, 2026 at 15:10"))
+        let size = NSSize(width: 1440, height: 860)
+        for dark in [false, true] {
+            try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
+                                        stagedSheet: AnyView(SheetStage(width: 520, height: 430) {
+                SessionLimitSheet(model: model, prompt: prompt) {}
+            })), size: size, dark: dark, name: dark ? "36b-session-limit-dark" : "36-session-limit", into: directory, dimToolbar: true)
+        }
+
+        // A Mac with sessions from before the limit: they are listed together.
+        let earlier = try CaptureStore(path: ":memory:", sessionName: "seed")
+        for name in ["Before the redesign", "Kitchen sensor soak test", "Checkout flow, staging", "Smart home app, Nov 2"] {
+            try earlier.startSession(named: name)
+            earlier.record(SampleTraffic.events()[1])
+        }
+        let earlierModel = CaptureViewModel(store: earlier, engine: nil)
+        earlierModel.savedSessionLimit = freeLicense.savedSessionLimit
+        try earlier.deleteEmptySessions()
+        let earlierPrompt = try unwrapped(earlierModel.sessionLimitPrompt(forNewSessionNamed: "Nov 2, 2026 at 15:10"))
+        try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
+                                    stagedSheet: AnyView(SheetStage(width: 520, height: 540) {
+            SessionLimitSheet(model: earlierModel, prompt: earlierPrompt) {}
+        })), size: size, dark: true, name: "37-session-limit-earlier-dark", into: directory, dimToolbar: true)
+    }
+
+    private struct Missing: Error {}
+    private static func unwrapped<T>(_ value: T?) throws -> T {
+        guard let value else { throw Missing() }
+        return value
     }
 
     /// The Saved Sessions window and a saved session open in the timeline, with a few earlier sessions on file.
@@ -166,7 +224,7 @@ enum Screenshots {
         }
         try model.store.deleteEmptySessions()
         try model.store.renameSession(model.store.currentSession, to: "Smart home app, Nov 2")
-        model.sessionLimit = nil
+        model.savedSessionLimit = nil
         model.apply(proLicense.entitlement)
         model.reloadSessions()
         model.openSession(model.sessions.first { $0.name == "Thermostat firmware 4.2.1" }!.id)
@@ -177,9 +235,9 @@ enum Screenshots {
         try await shoot(SessionsWindow(model: model, license: proLicense), size: windowSize, dark: true,
                         name: "33b-sessions-dark", into: directory, title: "Saved Sessions")
 
-        // Free tier: the notice about the three newest sessions (nothing is pruned for the shot).
+        // Free tier on a Mac that saved several sessions before the limit: they all stay.
         try await shoot(SessionsWindow(model: model, license: freeLicense), size: windowSize, dark: false,
-                        name: "34-sessions-free", into: directory, title: "Saved Sessions")
+                        name: "34b-sessions-free-earlier", into: directory, title: "Saved Sessions")
 
         let login = model.sessions.first { $0.name == "Login bug repro" }!
         model.openSession(login.id)

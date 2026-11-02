@@ -171,6 +171,10 @@ struct ContentView: View {
             model.rewrites.isPresented = false
             if presentsSheets { openWindow(id: RulesWindow.id) }
         }
+        .sheet(item: Binding(get: { presentsSheets ? model.sessionLimitPrompt : nil },
+                             set: { if $0 == nil { model.sessionLimitPrompt = nil } })) { prompt in
+            SessionLimitSheet(model: model, prompt: prompt) { model.sessionLimitPrompt = nil }
+        }
         .onChange(of: model.sessionsPresented) {
             guard model.sessionsPresented else { return }
             model.sessionsPresented = false
@@ -183,12 +187,13 @@ struct ContentView: View {
         }
         .task {
             model.reloadSessions()
-            model.sessionLimit = license.sessionLimit
+            model.savedSessionLimit = license.savedSessionLimit
+            model.continueLatestSessionIfFull()
             model.apply(license.entitlement)
             await license.refreshIfNeeded()
         }
         .onChange(of: license.entitlement) {
-            model.sessionLimit = license.sessionLimit
+            model.savedSessionLimit = license.savedSessionLimit
             model.apply(license.entitlement)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

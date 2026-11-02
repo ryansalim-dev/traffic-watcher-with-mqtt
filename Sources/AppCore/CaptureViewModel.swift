@@ -161,11 +161,12 @@ public final class CaptureViewModel {
     public var searchText = "" {
         didSet { runSearch() }
     }
-    /// Saved sessions to keep (free tier); nil keeps them all. Older sessions are deleted when it is set
-    /// and whenever a new session starts.
-    public var sessionLimit: Int? {
-        didSet { applySessionLimit() }
-    }
+    /// Saved sessions the free tier keeps next to the one recording now; nil keeps them all. Nothing is
+    /// deleted on its own: starting a session past the limit asks first (`sessionLimitPrompt`).
+    public var savedSessionLimit: Int?
+    /// Set when New Session needs the user to choose (free tier, saved sessions full). The main window
+    /// shows it; `replaceAndStartNewSession` goes ahead.
+    public var sessionLimitPrompt: SessionLimitPrompt?
     /// Saved sessions, newest first (the one recording now included). Refreshed by `reloadSessions()`.
     public private(set) var sessions: [CaptureSession] = []
     /// The saved session shown in the timeline instead of the live one; nil while showing live capture.
@@ -359,8 +360,10 @@ public final class CaptureViewModel {
     public func newSession(named name: String = "Session") {
         returnToLive()
         do {
+            let previous = store.currentSession
             try store.startSession(named: name)
-            applySessionLimit()
+            // A session that never recorded anything isn't worth keeping.
+            if try store.events(in: previous, limit: 1).isEmpty { try? store.deleteSession(previous) }
             rows = []
             topicTree = TopicTree()
             selection = nil
@@ -426,6 +429,76 @@ public final class CaptureViewModel {
         resetFilters()
     }
 
+    /// Sessions other than the one recording now, newest first.
+    public var savedSessions: [CaptureSession] { sessions.filter { !isLive($0) } }
+
+    /// What starting a new session would replace on the free tier, or nil when it fits. Only a new
+    /// session that adds a saved one asks: the one recording now must have events, and the saved
+    /// sessions must already fill the limit. Sessions kept from before the limit count too, so the
+    /// prompt can list several.
+    public func sessionLimitPrompt(forNewSessionNamed name: String) -> SessionLimitPrompt? {
+        guard let limit = savedSessionLimit else { return nil }
+        reloadSessions()
+        guard let live = sessions.first(where: { isLive($0) }), live.eventCount > 0 else { return nil }
+        let saved = savedSessions
+        guard saved.count >= limit else { return nil }
+        // The session recording now takes one of the slots once it is saved.
+        let replaced = Array(saved.dropFirst(max(0, limit - 1)))
+        guard !replaced.isEmpty else { return nil }
+        return SessionLimitPrompt(newSessionName: name, saving: live, replacing: replaced, limit: limit)
+    }
+
+    /// New Session from the menu: starts one, or sets `sessionLimitPrompt` when the free tier must ask.
+    public func requestNewSession(named name: String) {
+        if let prompt = sessionLimitPrompt(forNewSessionNamed: name) {
+            sessionLimitPrompt = prompt
+        } else {
+            newSession(named: name)
+        }
+    }
+
+    /// The user chose to replace: starts the new session, then deletes the sessions the prompt listed.
+    public func replaceAndStartNewSession(_ prompt: SessionLimitPrompt) {
+        if sessionLimitPrompt?.id == prompt.id { sessionLimitPrompt = nil }
+        newSession(named: prompt.newSessionName)
+        for session in prompt.replacing where !isLive(session) {
+            do {
+                try store.deleteSession(session.id)
+            } catch {
+                lastError = "Could not remove “\(session.name)”: \(error)"
+            }
+        }
+        reloadSessions()
+    }
+
+    /// Free tier, at launch: every launch starts a session, so once the saved sessions are full the
+    /// app keeps recording into the latest one instead of adding another. Nothing is deleted.
+    /// Returns true when it switched.
+    @discardableResult
+    public func continueLatestSessionIfFull() -> Bool {
+        guard let limit = savedSessionLimit, viewedSession == nil else { return false }
+        reloadSessions()
+        guard let live = sessions.first(where: { isLive($0) }), live.eventCount == 0 else { return false }
+        let saved = savedSessions
+        guard saved.count > limit, let latest = saved.first else { return false }
+        do {
+            try store.resumeSession(latest.id)
+            let events = try store.allEvents(in: latest.id)
+            var tree = TopicTree()
+            for stored in events {
+                if case .mqtt(let m) = stored.event { tree.record(m.event, at: m.timestamp) }
+            }
+            rows = events.map(TrafficRow.init)
+            topicTree = tree
+            resetFilters()
+            reloadSessions()
+            return true
+        } catch {
+            lastError = "Could not continue the last session: \(error)"
+            return false
+        }
+    }
+
     public func renameSession(_ id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -463,20 +536,6 @@ public final class CaptureViewModel {
         engine?.bypass(host: host)
         if !configuration.bypassHosts.contains(host) { configuration.bypassHosts.append(host) }
         pinnedHosts.removeAll { $0 == host }
-    }
-
-    private func applySessionLimit() {
-        guard let sessionLimit else { return }
-        do {
-            if try store.pruneSessions(keepingNewest: sessionLimit) > 0 {
-                if let viewed = viewedSession, (try? store.sessions())?.contains(where: { $0.id == viewed.id }) != true {
-                    returnToLive()
-                }
-                reloadSessions()
-            }
-        } catch {
-            lastError = "Could not remove old sessions: \(error)"
-        }
     }
 
     // MARK: Events
@@ -562,4 +621,24 @@ public final class CaptureViewModel {
     /// Exports the session on screen, or `session` when given.
     public func exportHAR(session: UUID? = nil) throws -> Data { try store.exportHAR(session: session ?? displayedSessionID) }
     public func exportMQTT(session: UUID? = nil) throws -> Data { try store.exportMQTTJSONLines(session: session ?? displayedSessionID) }
+}
+
+/// Starting a new session on the free tier when its saved sessions are full.
+public struct SessionLimitPrompt: Identifiable, Equatable, Sendable {
+    public let id = UUID()
+    /// The name the new session gets.
+    public let newSessionName: String
+    /// The session recording now, which becomes a saved session.
+    public let saving: CaptureSession
+    /// Older saved sessions that are deleted to make room, newest first.
+    public let replacing: [CaptureSession]
+    /// Saved sessions the free tier keeps.
+    public let limit: Int
+
+    public init(newSessionName: String, saving: CaptureSession, replacing: [CaptureSession], limit: Int) {
+        self.newSessionName = newSessionName
+        self.saving = saving
+        self.replacing = replacing
+        self.limit = limit
+    }
 }

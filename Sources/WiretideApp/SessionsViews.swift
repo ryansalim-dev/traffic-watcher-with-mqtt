@@ -12,17 +12,17 @@ struct SessionsWindow: View {
     @Bindable var model: CaptureViewModel
     let license: LicenseManager
     @State private var selection: UUID?
+    @State private var limitPrompt: SessionLimitPrompt?
 
     var body: some View {
         HStack(spacing: 0) {
-            SessionsList(model: model, selection: $selection)
+            SessionsList(model: model, selection: $selection, limitPrompt: $limitPrompt)
                 .frame(width: 300)
                 .background(Theme.sidebar)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
             VStack(spacing: 0) {
-                if let limit = license.sessionLimit {
-                    ProNotice(feature: "Keeping every session",
-                              detail: "Free keeps your \(limit) newest sessions, including the one recording now.")
+                if let limit = license.savedSessionLimit {
+                    ProNotice(feature: "Keeping every session", detail: FreeSessions.notice(limit: limit, saved: model.savedSessions.count))
                         .padding(.horizontal, 20)
                         .padding(.top, 14)
                 }
@@ -40,6 +40,12 @@ struct SessionsWindow: View {
         .frame(minWidth: 820, idealWidth: 900, minHeight: 520, idealHeight: 600)
         .background(GraphiteWindow())
         .tint(Theme.accent)
+        .sheet(item: $limitPrompt) { prompt in
+            SessionLimitSheet(model: model, prompt: prompt) {
+                limitPrompt = nil
+                selection = model.sessions.first?.id
+            }
+        }
         .onAppear {
             model.reloadSessions()
             if selection == nil { selection = model.viewedSession?.id ?? model.sessions.first(where: { !model.isLive($0) })?.id ?? model.sessions.first?.id }
@@ -60,6 +66,7 @@ struct SessionsWindow: View {
 struct SessionsList: View {
     @Bindable var model: CaptureViewModel
     @Binding var selection: UUID?
+    @Binding var limitPrompt: SessionLimitPrompt?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -99,8 +106,13 @@ struct SessionsList: View {
 
             HStack(spacing: 6) {
                 Button {
-                    model.newSession(named: SessionNames.now())
-                    selection = model.sessions.first?.id
+                    let name = SessionNames.now()
+                    if let prompt = model.sessionLimitPrompt(forNewSessionNamed: name) {
+                        limitPrompt = prompt
+                    } else {
+                        model.newSession(named: name)
+                        selection = model.sessions.first?.id
+                    }
                 } label: {
                     Label("New Session", systemImage: "plus")
                 }
@@ -279,18 +291,7 @@ struct SessionDetail: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(session.eventCount == 0 && !isLive)
                         }
-                        Menu {
-                            Button("HTTP as HAR…") {
-                                save(name: "\(fileName).har", type: .json) { try model.exportHAR(session: session.id) }
-                            }
-                            .disabled((session.kindCounts["http"] ?? 0) == 0)
-                            Button("MQTT as JSON Lines…") {
-                                save(name: "\(fileName).jsonl", type: .plainText) { try model.exportMQTT(session: session.id) }
-                            }
-                            .disabled((session.kindCounts["mqtt"] ?? 0) == 0)
-                        } label: {
-                            Label("Export", systemImage: "square.and.arrow.up")
-                        }
+                        SessionExportMenu(model: model, session: session)
                         .fixedSize()
                         Spacer()
                         Button(role: .destructive) {
@@ -325,28 +326,11 @@ struct SessionDetail: View {
         return "Opening a session shows it in the timeline. Recording carries on in the live session behind it; use Back to Live (⇧⌘L) to return."
     }
 
-    private var fileName: String {
-        let cleaned = session.name.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
-        return cleaned.isEmpty ? "session" : cleaned
-    }
-
     private func commitName() {
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             name = session.name
         } else if name != session.name {
             model.renameSession(session.id, to: name)
-        }
-    }
-
-    private func save(name: String, type: UTType, data: () throws -> Data) {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = name
-        panel.allowedContentTypes = [type]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try data().write(to: url)
-        } catch {
-            _ = NSAlert(error: error).runModal()
         }
     }
 }
@@ -473,6 +457,181 @@ enum SessionFormat {
         let minutes = Int(seconds / 60)
         if minutes < 60 { return "\(minutes) min" }
         return "\(minutes / 60) h \(minutes % 60) min"
+    }
+}
+
+/// Export as HAR (HTTP) or JSON Lines (MQTT). Free on every tier.
+struct SessionExportMenu: View {
+    let model: CaptureViewModel
+    let session: CaptureSession
+    var title = "Export"
+
+    var body: some View {
+        Menu {
+            Button("HTTP as HAR…") {
+                SessionExport.save(name: "\(fileName).har", type: .json) { try model.exportHAR(session: session.id) }
+            }
+            .disabled((session.kindCounts["http"] ?? 0) == 0)
+            Button("MQTT as JSON Lines…") {
+                SessionExport.save(name: "\(fileName).jsonl", type: .plainText) { try model.exportMQTT(session: session.id) }
+            }
+            .disabled((session.kindCounts["mqtt"] ?? 0) == 0)
+        } label: {
+            Label(title, systemImage: "square.and.arrow.up")
+        }
+        .fixedSize()
+    }
+
+    private var fileName: String {
+        let cleaned = session.name.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
+        return cleaned.isEmpty ? "session" : cleaned
+    }
+}
+
+enum SessionExport {
+    @MainActor
+    static func save(name: String, type: UTType, data: () throws -> Data) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = name
+        panel.allowedContentTypes = [type]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data().write(to: url)
+        } catch {
+            _ = NSAlert(error: error).runModal()
+        }
+    }
+}
+
+enum FreeSessions {
+    static func count(_ n: Int) -> String {
+        n == 1 ? "one saved session" : "\(n) saved sessions"
+    }
+
+    /// The line under "Keeping every session is part of Wiretide Pro" in the Saved Sessions window.
+    static func notice(limit: Int, saved: Int) -> String {
+        if saved > limit {
+            return "Free keeps \(count(limit)) next to the one recording now. Your \(saved) earlier sessions stay until you start a new one."
+        }
+        return "Free keeps \(count(limit)) next to the one recording now. Export works on every session."
+    }
+}
+
+/// New Session on the free tier when the saved sessions are full: explains Pro, offers to export
+/// what would be replaced, and replaces it only when asked.
+struct SessionLimitSheet: View {
+    let model: CaptureViewModel
+    let prompt: SessionLimitPrompt
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Wiretide Free keeps \(FreeSessions.count(prompt.limit))")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(explanation)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    CapsLabel(prompt.replacing.count == 1 ? "Will be replaced" : "Will be replaced (\(prompt.replacing.count))")
+                    ScrollView {
+                        VStack(spacing: 6) {
+                            ForEach(prompt.replacing) { session in
+                                ReplacedSessionRow(model: model, session: session)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 170)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: "seal.fill").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wiretide Pro keeps every session").font(.system(size: 12.5, weight: .semibold))
+                        Text("A one-time purchase that also adds breakpoints, map and rewrite, MQTT publish and replay, and scripting.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    SettingsLink { Text("Upgrade…") }
+                }
+                .padding(12)
+                .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.accent.opacity(0.25), lineWidth: 0.5))
+            }
+            .padding(20)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel", action: dismiss)
+                    .keyboardShortcut(.cancelAction)
+                Button(role: .destructive) {
+                    model.replaceAndStartNewSession(prompt)
+                    dismiss()
+                } label: {
+                    Text(prompt.replacing.count == 1 ? "Replace and Start New Session" : "Replace \(prompt.replacing.count) and Start New Session")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.failure)
+            }
+            .controlSize(.large)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+        }
+        .frame(width: 520)
+        .background(Theme.panel)
+        .tint(Theme.accent)
+    }
+
+    private var explanation: String {
+        let saving = "“\(prompt.saving.name)” becomes your saved session"
+        let replaced = prompt.replacing.count == 1 ? "the one below is deleted" : "the \(prompt.replacing.count) below are deleted"
+        return "Starting a new session keeps what you just recorded: \(saving) and \(replaced). Export anything you want to keep first; export is free."
+    }
+}
+
+struct ReplacedSessionRow: View {
+    let model: CaptureViewModel
+    let session: CaptureSession
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.name.isEmpty ? "Untitled session" : session.name)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(SessionFormat.line(session))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            SessionKindBar(counts: session.kindCounts, total: session.eventCount)
+                .frame(width: 44, height: 4)
+            SessionExportMenu(model: model, session: session, title: "Export…")
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
     }
 }
 

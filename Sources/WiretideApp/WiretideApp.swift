@@ -202,7 +202,7 @@ struct CaptureCommands: Commands {
             .keyboardShortcut("r")
             .disabled(model == nil)
 
-            Button("New Session") { model?.newSession(named: SessionNames.now()) }
+            Button("New Session") { model?.requestNewSession(named: SessionNames.now()) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model == nil)
 
