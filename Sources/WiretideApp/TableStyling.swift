@@ -36,6 +36,7 @@ struct TableHook: NSViewRepresentable {
         let coordinator = context.coordinator
         DispatchQueue.main.async {
             if coordinator.table == nil { coordinator.attach(from: view, style: selection) }
+            if let table = coordinator.table { TealSelection.install(on: table, style: selection) }
             coordinator.rowCountChanged(to: rowCount, follow: followsEnd)
         }
     }
@@ -79,22 +80,36 @@ struct TableHook: NSViewRepresentable {
             atBottom = clip.bounds.maxY >= table.frame.height - slack
         }
 
-        /// The NSTableView closest to `anchor`: the first one found under each ancestor in turn.
+        /// The NSTableView whose scroll view sits where `anchor` (a background of the Table or List) is drawn.
+        /// Falls back to the first table under the nearest ancestor that has one.
         static func findTable(near anchor: NSView) -> NSTableView? {
+            if let root = anchor.window?.contentView?.superview ?? anchor.window?.contentView {
+                let center = anchor.convert(NSPoint(x: anchor.bounds.midX, y: anchor.bounds.midY), to: nil)
+                var tables: [NSTableView] = []
+                collectTables(in: root, into: &tables)
+                if let match = tables.first(where: { table in
+                    let host: NSView = table.enclosingScrollView ?? table
+                    return host.convert(host.bounds, to: nil).contains(center)
+                }) {
+                    return match
+                }
+            }
             var ancestor = anchor.superview
             while let current = ancestor {
-                if let table = firstTable(in: current) { return table }
+                var tables: [NSTableView] = []
+                collectTables(in: current, into: &tables)
+                if let first = tables.first { return first }
                 ancestor = current.superview
             }
             return nil
         }
 
-        private static func firstTable(in view: NSView) -> NSTableView? {
-            if let table = view as? NSTableView { return table }
-            for subview in view.subviews {
-                if let table = firstTable(in: subview) { return table }
+        private static func collectTables(in view: NSView, into tables: inout [NSTableView]) {
+            if let table = view as? NSTableView {
+                tables.append(table)
+                return
             }
-            return nil
+            for subview in view.subviews { collectTables(in: subview, into: &tables) }
         }
     }
 }
@@ -108,6 +123,9 @@ enum TealSelection {
 
     static func install(on table: NSTableView, style: RowSelectionStyle) {
         objc_setAssociatedObject(table, &styleKey, NSNumber(value: style == .timeline ? 1 : 2), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        // A source list draws its selection with a material view, not drawSelection(in:), so switch it to the
+        // regular style, which does call it.
+        if table.selectionHighlightStyle == .sourceList { table.selectionHighlightStyle = .regular }
         patchVisibleRows(of: table)
     }
 
