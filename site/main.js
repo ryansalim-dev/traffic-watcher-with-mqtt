@@ -1,8 +1,15 @@
 (() => {
   const site = window.SITE || {};
 
+  // Launched once there is a download. Until then, download buttons lead to the waitlist.
   if (site.downloadURL) {
-    document.querySelectorAll("[data-download]").forEach((a) => { a.href = site.downloadURL; });
+    document.querySelectorAll("[data-download]").forEach((a) => {
+      a.href = site.downloadURL;
+      const label = a.querySelector("[data-label]") || a;
+      if (a.dataset.launchLabel) label.textContent = a.dataset.launchLabel;
+    });
+    document.querySelectorAll("[data-prelaunch]").forEach((el) => { el.hidden = true; });
+    document.querySelectorAll("[data-launched]").forEach((el) => { el.hidden = false; });
   }
 
   if (site.checkoutURL) {
@@ -10,16 +17,14 @@
       a.href = site.checkoutURL;
       a.textContent = "Buy Pro";
     });
-    // Once Pro is on sale, the waitlist wording no longer applies.
-    document.querySelectorAll("[data-prelaunch]").forEach((el) => { el.hidden = true; });
   }
 
   const form = document.querySelector("[data-waitlist]");
-  const fallback = document.querySelector("[data-waitlist-fallback]");
   if (!form || !site.waitlistEndpoint) return;
 
   form.hidden = false;
-  if (fallback) fallback.hidden = true;
+  document.querySelectorAll("[data-waitlist-fallback]").forEach((el) => { el.hidden = true; });
+  document.querySelectorAll("[data-waitlist-copy]").forEach((el) => { el.hidden = false; });
   const status = form.querySelector(".form-status");
   const button = form.querySelector("button");
 
