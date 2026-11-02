@@ -10,6 +10,8 @@
       a.href = site.checkoutURL;
       a.textContent = "Buy Pro";
     });
+    // Once Pro is on sale, the waitlist wording no longer applies.
+    document.querySelectorAll("[data-prelaunch]").forEach((el) => { el.hidden = true; });
   }
 
   const form = document.querySelector("[data-waitlist]");
