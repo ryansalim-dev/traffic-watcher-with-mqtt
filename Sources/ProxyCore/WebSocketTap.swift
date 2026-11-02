@@ -2,9 +2,14 @@ import Foundation
 import MQTTCore
 import NIOCore
 
-/// Watches both byte streams of a proxied WebSocket upgrade. It records the handshake as an
-/// `HTTPExchange`, then decodes frames: sockets whose negotiated subprotocol starts with `mqtt`
-/// are fed to an `MQTTSession`, and any other socket produces `webSocketMessage` events.
+/// Watches both byte streams of a proxied WebSocket upgrade and decides what is forwarded. It
+/// records the handshake as an `HTTPExchange`, then decodes frames: sockets whose negotiated
+/// subprotocol starts with `mqtt` run through an `MQTTRelay` (capture plus MQTT rewrite rules),
+/// and any other socket produces `webSocketMessage` events and is forwarded byte for byte.
+///
+/// On an MQTT socket only complete frames are forwarded. Binary messages whose MQTT bytes a rule
+/// changed are sent as one new frame (masked toward the server, as RFC 6455 requires); everything
+/// else (control frames, text, untouched binary messages) goes out exactly as it came in.
 /// Confined to one event loop.
 final class WebSocketTap {
     private enum State {
@@ -14,41 +19,63 @@ final class WebSocketTap {
         case passthrough
     }
 
+    /// Per-direction framing state for an MQTT socket.
+    private struct Stream {
+        var parser = WebSocketFrameParser()
+        /// Opcode of the data message in progress (for continuation frames).
+        var messageOpcode: WebSocketOpcode?
+        /// Raw frames of a fragmented binary message, held until its last frame.
+        var heldFrames: [UInt8] = []
+        /// Bytes went out before the socket was known to be MQTT, so this direction is captured
+        /// but forwarded unchanged (rewriting it would split or repeat frames).
+        var forwardRaw = false
+        /// Parsing stopped on the other side; this side still owes the bytes it held back.
+        var needsFlush = false
+    }
+
     let connectionID = UUID()
     private let sink: CaptureSink
     private let url: String
     private let request: HTTPExchange
+    private let rules: LiveRules?
     private var state = State.awaitingHandshake(response: [])
-    private var clientParser = WebSocketFrameParser()
-    private var serverParser = WebSocketFrameParser()
+    private var client = Stream()
+    private var server = Stream()
     private var clientBacklog: [UInt8] = []
-    private var mqtt: MQTTTap?
+    private var relay: MQTTRelay?
 
     /// - Parameter request: the handshake as captured so far (response fields are filled in here).
-    init(sink: CaptureSink, request: HTTPExchange) {
+    /// - Parameter rules: MQTT rewrite rules, read for every packet.
+    init(sink: CaptureSink, request: HTTPExchange, rules: LiveRules? = nil) {
         self.sink = sink
         self.url = request.url
         self.request = request
+        self.rules = rules
     }
 
-    func receiveFromClient(_ buffer: ByteBuffer) {
+    /// Takes bytes read from the client and returns the bytes to write to the server.
+    func receiveFromClient(_ bytes: [UInt8]) -> [UInt8] {
         switch state {
         case .awaitingHandshake:
-            clientBacklog += buffer.readableBytesView
+            // Frames sent before the 101 arrives go out as they are and are decoded once it does.
+            clientBacklog += bytes
+            return bytes
         case .frames:
-            decode(Array(buffer.readableBytesView), direction: .clientToServer)
+            return process(bytes, direction: .clientToServer)
         case .passthrough:
-            break
+            return flush(.clientToServer) + bytes
         }
     }
 
-    func receiveFromServer(_ buffer: ByteBuffer) {
+    /// Takes bytes read from the server and returns the bytes to write to the client.
+    func receiveFromServer(_ bytes: [UInt8]) -> [UInt8] {
         switch state {
         case .awaitingHandshake(var response):
-            response += buffer.readableBytesView
+            let previous = response.count
+            response += bytes
             guard let end = headerEnd(response) else {
                 state = response.count > 64 * 1024 ? .passthrough : .awaitingHandshake(response: response)
-                return
+                return bytes
             }
             let head = parseResponseHead(response[..<end])
             var exchange = request
@@ -60,29 +87,127 @@ final class WebSocketTap {
 
             guard head.status == 101 else {
                 state = .passthrough
-                return
+                clientBacklog = []
+                return bytes
             }
             let subprotocol = head.headers.first { $0.name.lowercased() == "sec-websocket-protocol" }?.value ?? ""
             if subprotocol.lowercased().hasPrefix("mqtt") {
-                mqtt = MQTTTap(sink: sink, broker: url)
+                relay = MQTTRelay(sink: sink, broker: url, rules: rules)
             }
             state = .frames
-            decode(Array(response[(end + 4)...]), direction: .serverToClient)
+            let headLength = end + 4 - previous
+            var output = Array(bytes[..<headLength])
+            output += process(Array(bytes[headLength...]), direction: .serverToClient)
+
             let backlog = clientBacklog
             clientBacklog = []
-            decode(backlog, direction: .clientToServer)
+            if !backlog.isEmpty {
+                client.forwardRaw = true
+                _ = process(backlog, direction: .clientToServer)
+            }
+            return output
         case .frames:
-            decode(Array(buffer.readableBytesView), direction: .serverToClient)
+            return process(bytes, direction: .serverToClient)
         case .passthrough:
-            break
+            return flush(.serverToClient) + bytes
         }
     }
 
-    private func decode(_ bytes: [UInt8], direction: WebSocketDirection) {
-        guard case .frames = state, !bytes.isEmpty else { return }
+    private func process(_ bytes: [UInt8], direction: WebSocketDirection) -> [UInt8] {
+        guard !bytes.isEmpty else { return [] }
+        guard let relay else {
+            record(bytes, direction: direction)
+            return bytes
+        }
+        var stream = direction == .clientToServer ? client : server
+        defer {
+            if direction == .clientToServer { client = stream } else { server = stream }
+        }
+        if stream.forwardRaw {
+            _ = mqttOutput(bytes, stream: &stream, relay: relay, direction: direction)
+            return bytes
+        }
+        return mqttOutput(bytes, stream: &stream, relay: relay, direction: direction)
+    }
+
+    private func mqttOutput(_ bytes: [UInt8], stream: inout Stream, relay: MQTTRelay, direction: WebSocketDirection) -> [UInt8] {
+        let mqttDirection: MQTTDirection = direction == .clientToServer ? .clientToBroker : .brokerToClient
+        let (frames, parseError) = stream.parser.frames(bytes)
+        var output: [UInt8] = []
+        var failure: Error? = parseError
+        for frame in frames {
+            let message: WebSocketFrameParser.Message?
+            do {
+                message = try stream.parser.assemble(frame)
+            } catch {
+                failure = error
+                // This frame and everything after it go out untouched.
+                output += frame.raw
+                break
+            }
+            if frame.opcode.isControl {
+                output += frame.raw
+                continue
+            }
+            if frame.opcode != .continuation { stream.messageOpcode = frame.opcode }
+            guard stream.messageOpcode == .binary else {
+                // MQTT rides in binary messages; text is forwarded as it is.
+                output += frame.raw
+                continue
+            }
+            stream.heldFrames += frame.raw
+            guard let message else { continue }
+            let relayed = relay.relay(message.payload, from: mqttDirection)
+            if relayed == message.payload {
+                output += stream.heldFrames
+            } else if !relayed.isEmpty {
+                output += WebSocketFrameParser.encode(opcode: .binary, payload: relayed, masked: direction == .clientToServer)
+            }
+            stream.heldFrames = []
+        }
+        if let failure {
+            output += release(&stream, relay: relay, direction: direction)
+            state = .passthrough
+            if direction == .clientToServer { server.needsFlush = true } else { client.needsFlush = true }
+            sink.record(.webSocketDecodingFailed(connectionID: connectionID, reason: String(describing: failure)))
+        }
+        return output
+    }
+
+    /// Everything a stream still holds, in order, so the connection can carry on uninspected.
+    private func release(_ stream: inout Stream, relay: MQTTRelay?, direction: WebSocketDirection) -> [UInt8] {
+        var output: [UInt8] = []
+        if let relay {
+            let pending = relay.takePending(from: direction == .clientToServer ? .clientToBroker : .brokerToClient)
+            if !pending.isEmpty, !stream.forwardRaw {
+                output += WebSocketFrameParser.encode(opcode: .binary, payload: pending, masked: direction == .clientToServer)
+            }
+        }
+        if !stream.forwardRaw {
+            output += stream.heldFrames
+            output += stream.parser.takeBuffered()
+        }
+        stream.heldFrames = []
+        return output
+    }
+
+    private func flush(_ direction: WebSocketDirection) -> [UInt8] {
+        if direction == .clientToServer {
+            guard client.needsFlush else { return [] }
+            client.needsFlush = false
+            return release(&client, relay: relay, direction: direction)
+        } else {
+            guard server.needsFlush else { return [] }
+            server.needsFlush = false
+            return release(&server, relay: relay, direction: direction)
+        }
+    }
+
+    /// Records the messages of a socket that isn't MQTT.
+    private func record(_ bytes: [UInt8], direction: WebSocketDirection) {
         let messages: [WebSocketFrameParser.Message]
         do {
-            messages = direction == .clientToServer ? try clientParser.feed(bytes) : try serverParser.feed(bytes)
+            messages = direction == .clientToServer ? try client.parser.feed(bytes) : try server.parser.feed(bytes)
         } catch {
             state = .passthrough
             sink.record(.webSocketDecodingFailed(connectionID: connectionID, reason: String(describing: error)))
@@ -90,23 +215,14 @@ final class WebSocketTap {
         }
         let now = Date()
         for message in messages {
-            if let mqtt {
-                // MQTT rides in binary messages; control frames are transport noise here.
-                if message.opcode == .binary {
-                    var buffer = ByteBuffer()
-                    buffer.writeBytes(message.payload)
-                    mqtt.receive(buffer, from: direction == .clientToServer ? .clientToBroker : .brokerToClient)
-                }
-            } else {
-                sink.record(.webSocketMessage(WebSocketMessage(
-                    connectionID: connectionID,
-                    timestamp: now,
-                    url: url,
-                    direction: direction,
-                    opcode: message.opcode,
-                    payload: message.payload
-                )))
-            }
+            sink.record(.webSocketMessage(WebSocketMessage(
+                connectionID: connectionID,
+                timestamp: now,
+                url: url,
+                direction: direction,
+                opcode: message.opcode,
+                payload: message.payload
+            )))
         }
     }
 }

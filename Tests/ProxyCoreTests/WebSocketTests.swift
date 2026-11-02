@@ -83,7 +83,11 @@ final class FakeWebSocketServerHandler: ChannelInboundHandler, @unchecked Sendab
 
     init(subprotocol: String?) { self.subprotocol = subprotocol }
 
+    private var _binaryPayloads: [[UInt8]] = []
+
     var requestHead: String { lock.lock(); defer { lock.unlock() }; return _requestHead }
+    /// Binary messages received after the upgrade, in order.
+    var binaryPayloads: [[UInt8]] { lock.lock(); defer { lock.unlock() }; return _binaryPayloads }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         pending += unwrapInboundIn(data).readableBytesView
@@ -99,6 +103,7 @@ final class FakeWebSocketServerHandler: ChannelInboundHandler, @unchecked Sendab
         guard let messages = try? parser.feed(pending) else { return context.close(promise: nil) }
         pending = []
         for message in messages {
+            if message.opcode == .binary { lock.lock(); _binaryPayloads.append(message.payload); lock.unlock() }
             switch message.opcode {
             case .binary where message.payload.first.map({ $0 >> 4 == 1 }) == true:
                 context.writeAndFlush(wrapOutboundOut(ByteBuffer(bytes: wsFrame(0x2, [0x20, 0x02, 0x00, 0x00]))), promise: nil)

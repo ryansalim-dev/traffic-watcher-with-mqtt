@@ -38,19 +38,52 @@ struct WebSocketFrameParser {
         self.maximumMessageSize = maximumMessageSize
     }
 
+    /// One frame as it crossed the wire: its unmasked payload and its exact bytes.
+    struct Frame: Equatable {
+        var fin: Bool
+        var opcode: WebSocketOpcode
+        var payload: [UInt8]
+        var raw: [UInt8]
+    }
+
     mutating func feed<Bytes: Sequence>(_ bytes: Bytes) throws -> [Message] where Bytes.Element == UInt8 {
-        buffer.append(contentsOf: bytes)
+        let (frames, error) = self.frames(bytes)
         var messages: [Message] = []
+        for frame in frames {
+            if let message = try assemble(frame) { messages.append(message) }
+        }
+        if let error { throw error }
+        return messages
+    }
+
+    /// Splits the stream into complete frames without joining fragments. Frames before a parsing
+    /// error are still returned; the bytes from the bad frame on stay buffered (see `takeBuffered`).
+    mutating func frames<Bytes: Sequence>(_ bytes: Bytes) -> (frames: [Frame], error: Error?) where Bytes.Element == UInt8 {
+        buffer.append(contentsOf: bytes)
+        var frames: [Frame] = []
         var offset = 0
         defer { buffer.removeFirst(offset) }
-
-        while let frame = try nextFrame(at: offset) {
-            offset += frame.length
-            if let message = try assemble(fin: frame.fin, opcode: frame.opcode, payload: frame.payload) {
-                messages.append(message)
+        do {
+            while let frame = try nextFrame(at: offset) {
+                frames.append(Frame(fin: frame.fin, opcode: frame.opcode, payload: frame.payload,
+                                    raw: Array(buffer[offset..<(offset + frame.length)])))
+                offset += frame.length
             }
+        } catch {
+            return (frames, error)
         }
-        return messages
+        return (frames, nil)
+    }
+
+    /// Bytes received but not yet part of a complete frame, removed from the parser.
+    mutating func takeBuffered() -> [UInt8] {
+        defer { buffer = [] }
+        return buffer
+    }
+
+    /// Joins fragments; returns a message once one is complete (control frames at once).
+    mutating func assemble(_ frame: Frame) throws -> Message? {
+        try assemble(fin: frame.fin, opcode: frame.opcode, payload: frame.payload)
     }
 
     private func nextFrame(at start: Int) throws -> (fin: Bool, opcode: WebSocketOpcode, payload: [UInt8], length: Int)? {
@@ -109,5 +142,27 @@ struct WebSocketFrameParser {
         fragmentOpcode = opcode
         fragments = payload
         return nil
+    }
+}
+
+extension WebSocketFrameParser {
+    /// Encodes one unfragmented frame. Frames from a client must be masked (RFC 6455 §5.3).
+    static func encode(opcode: WebSocketOpcode, payload: [UInt8], masked: Bool) -> [UInt8] {
+        var frame: [UInt8] = [0x80 | opcode.rawValue]
+        let maskBit: UInt8 = masked ? 0x80 : 0
+        if payload.count < 126 {
+            frame.append(maskBit | UInt8(payload.count))
+        } else if payload.count <= 0xFFFF {
+            frame += [maskBit | 126, UInt8(payload.count >> 8), UInt8(payload.count & 0xFF)]
+        } else {
+            frame.append(maskBit | 127)
+            frame += (0..<8).reversed().map { UInt8((UInt64(payload.count) >> (UInt64($0) * 8)) & 0xFF) }
+        }
+        guard masked else { return frame + payload }
+        let key = (0..<4).map { _ in UInt8.random(in: 0...255) }
+        frame += key
+        frame.reserveCapacity(frame.count + payload.count)
+        for (index, byte) in payload.enumerated() { frame.append(byte ^ key[index & 3]) }
+        return frame
     }
 }
