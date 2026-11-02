@@ -10,7 +10,7 @@ import NIOCore
 /// On an MQTT socket only complete frames are forwarded. Binary messages whose MQTT bytes a rule
 /// changed are sent as one new frame (masked toward the server, as RFC 6455 requires); everything
 /// else (control frames, text, untouched binary messages) goes out exactly as it came in.
-/// Confined to one event loop.
+/// Used by one connection at a time: on its event loop, or on its `GlueHandler.Offload` queue while scripts run.
 final class WebSocketTap {
     private enum State {
         case awaitingHandshake(response: [UInt8])

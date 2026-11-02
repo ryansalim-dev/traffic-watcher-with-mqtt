@@ -205,7 +205,7 @@ public enum MQTTRewriter {
 
 /// One direction-aware relay of an MQTT connection: splits each direction's bytes into packets,
 /// rewrites PUBLISH packets that match a rule, runs scripts on them, and records what was actually forwarded.
-/// Confined to one event loop.
+/// Used by one connection at a time: on its event loop, or on its `GlueHandler.Offload` queue while scripts run.
 ///
 /// Bytes are forwarded packet by packet, so a packet is held only until its last byte arrives.
 /// If the stream stops decoding as MQTT, everything is relayed untouched from then on.

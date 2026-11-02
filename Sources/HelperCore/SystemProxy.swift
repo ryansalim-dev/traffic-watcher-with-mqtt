@@ -112,6 +112,44 @@ public struct SystemProxyBackup: Codable, Equatable, Sendable {
     }
 }
 
+/// The system's network services and their Proxies dictionaries, changed as one unit.
+public protocol ProxySettingsStore {
+    /// Reads the Proxies dictionary of every enabled network service (service ID → dictionary),
+    /// lets `change` return the services to change and their new dictionaries, and commits those.
+    /// Nothing is committed if `change` throws.
+    func transaction(_ change: ([String: [String: Any]]) throws -> [String: [String: Any]]) throws
+}
+
+/// Turns the system proxy on and off so that the user's settings can always be put back: the
+/// backup of a service is on disk before any change to that service is committed.
+public enum ProxySwitcher {
+    public static func enable(host: String, port: Int, bypass: [String], store: ProxySettingsStore, backupURL: URL) throws {
+        try store.transaction { services in
+            // Keep the oldest backup: if a previous session never restored, its backup holds the user's real settings.
+            var backup = SystemProxyBackup.load(from: backupURL) ?? SystemProxyBackup(services: [:])
+            var updates: [String: [String: Any]] = [:]
+            for (id, proxies) in services {
+                if backup.services[id] == nil { backup.services[id] = SystemProxyPlan.backup(of: proxies) }
+                updates[id] = SystemProxyPlan.enabling(proxies, host: host, port: port, bypass: bypass)
+            }
+            // Saved before the commit: a crash right after it must still leave a way back.
+            try backup.save(to: backupURL)
+            return updates
+        }
+    }
+
+    /// Puts back what the backup on disk recorded, then deletes it. Does nothing without a backup.
+    public static func restore(store: ProxySettingsStore, backupURL: URL) throws {
+        guard let backup = SystemProxyBackup.load(from: backupURL) else { return }
+        try store.transaction { services in
+            services.reduce(into: [:]) { updates, service in
+                if let saved = backup.services[service.key] { updates[service.key] = SystemProxyPlan.restoring(service.value, from: saved) }
+            }
+        }
+        try? FileManager.default.removeItem(at: backupURL)
+    }
+}
+
 #if canImport(ObjectiveC)
 /// The helper's XPC interface. Replies carry an error message, or nil on success.
 @objc public protocol WiretideHelperProtocol {

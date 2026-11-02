@@ -540,11 +540,14 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                     context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
                     self.respondWithError(context: context, status: .badGateway, message: failed.error!)
                 case .success(let upstream):
-                    let tap = WebSocketTap(sink: self.sink, request: exchange, rules: liveRules, scripts: self.configuration.scripts)
+                    let scripts = self.configuration.scripts
+                    let tap = WebSocketTap(sink: self.sink, request: exchange, rules: liveRules, scripts: scripts)
                     let allocator = upstream.allocator
                     let (clientSide, serverSide) = GlueHandler.pair(
                         transformA: { allocator.buffer(bytes: tap.receiveFromClient(Array($0.readableBytesView))) },
-                        transformB: { allocator.buffer(bytes: tap.receiveFromServer(Array($0.readableBytesView))) }
+                        transformB: { allocator.buffer(bytes: tap.receiveFromServer(Array($0.readableBytesView))) },
+                        // onPublish scripts may run for up to their time limit; keep them off the event loop.
+                        offload: scripts.map { scripts in GlueHandler.Offload { scripts.snapshot?.handlesPublish ?? false } }
                     )
                     upstream.writeAndFlush(requestBuffer, promise: nil)
                     self.switchProtocols(context: context, answerConnect: false, onFailure: { upstream.close(promise: nil) }) { pipeline in
