@@ -166,7 +166,7 @@ enum Screenshots {
         let size = NSSize(width: 1440, height: 860)
         for dark in [false, true] {
             try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
-                                        stagedSheet: AnyView(SheetStage(width: 520, height: 430) {
+                                        stagedSheet: AnyView(SheetStage(width: 520, height: 322) {
                 SessionLimitSheet(model: model, prompt: prompt) {}
             })), size: size, dark: dark, name: dark ? "36b-session-limit-dark" : "36-session-limit", into: directory, dimToolbar: true)
         }
@@ -182,7 +182,7 @@ enum Screenshots {
         try earlier.deleteEmptySessions()
         let earlierPrompt = try unwrapped(earlierModel.sessionLimitPrompt(forNewSessionNamed: "Nov 2, 2026 at 15:10"))
         try await shoot(ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
-                                    stagedSheet: AnyView(SheetStage(width: 520, height: 540) {
+                                    stagedSheet: AnyView(SheetStage(width: 520, height: 436) {
             SessionLimitSheet(model: earlierModel, prompt: earlierPrompt) {}
         })), size: size, dark: true, name: "37-session-limit-earlier-dark", into: directory, dimToolbar: true)
     }
