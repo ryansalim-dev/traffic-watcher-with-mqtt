@@ -1,15 +1,20 @@
 name: CI
 
 # Landing-page-only changes don't touch the app, so they skip CI (site.yml publishes them).
+# The macOS job runs on pushes to main and on demand (Actions > CI > Run workflow, pick the branch),
+# not on every pull request: on a private repo macOS minutes count 10x against the Actions quota.
+# Run it on demand when a pull request needs its screenshots or the app bundle.
 on:
   push:
     branches: [main]
     paths-ignore: ['site/**', '.github/workflows/site.yml', 'scripts/deploy-site.sh']
   pull_request:
     paths-ignore: ['site/**', '.github/workflows/site.yml', 'scripts/deploy-site.sh']
+  workflow_dispatch:
 
 jobs:
   macos:
+    if: github.event_name != 'pull_request'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +41,7 @@ jobs:
         with:
           name: Wiretide-app
           path: dist/*.zip
+          retention-days: 14
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,11 +49,13 @@ jobs:
           name: screenshots
           path: screenshots
           if-no-files-found: warn
+          retention-days: 14
       - name: Upload the app icon
         uses: actions/upload-artifact@v4
         with:
           name: app-icon
           path: dist/Wiretide.app/Contents/Resources/AppIcon.icns
+          retention-days: 14
 
   linux:
     runs-on: ubuntu-latest
