@@ -42,10 +42,8 @@ struct ContentView: View {
             .toolbar {
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
-                        Picker("View", selection: $mqttMode) {
-                            ForEach(MQTTMode.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        PillSegments(options: MQTTMode.allCases.map { ($0, $0.rawValue) }, selection: $mqttMode)
+                            .frame(width: 170)
                     }
                 }
             }

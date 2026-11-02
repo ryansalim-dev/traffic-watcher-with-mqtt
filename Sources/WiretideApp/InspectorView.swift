@@ -87,11 +87,7 @@ struct HTTPInspector: View {
                 }
                 TimingSummary(timing: exchange.timing, total: exchange.duration)
                     .padding(.top, 2)
-                Picker("Part", selection: $part) {
-                    ForEach(Part.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                PillSegments(options: Part.allCases.map { ($0, $0.rawValue) }, selection: $part)
             }
             .padding(.horizontal, 18)
             .padding(.top, 16)

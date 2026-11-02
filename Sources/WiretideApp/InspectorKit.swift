@@ -576,3 +576,47 @@ struct JSONTreeView: View {
     }
 }
 #endif
+
+#if os(macOS)
+/// The segmented control from the mockups: a quiet track with the chosen segment raised.
+struct PillSegments<Value: Hashable>: View {
+    let options: [(value: Value, title: String)]
+    @Binding var selection: Value
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                let isOn = option.value == selection
+                Button {
+                    selection = option.value
+                } label: {
+                    Text(option.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundStyle(isOn ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                        .background {
+                            if isOn {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Theme.raised)
+                                    .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
+                                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+extension Theme {
+    /// The raised surface of a selected segment: white in light mode, the window's darkest gray in dark mode.
+    static let raised = Color(light: 0xFFFFFF, dark: 0x15181C)
+}
+#endif

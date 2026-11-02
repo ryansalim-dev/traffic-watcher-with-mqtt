@@ -181,10 +181,13 @@ enum Screenshots {
         let second = Task { await handler.editResponse(response, for: login) }
         while center.paused.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
 
-        try await shoot(BreakpointEditor(center: center, item: center.paused[0]), size: NSSize(width: 880, height: 620),
-                        dark: false, name: "14-breakpoint-request", into: directory)
-        try await shoot(BreakpointEditor(center: center, item: center.paused[1]), size: NSSize(width: 880, height: 620),
-                        dark: true, name: "15-breakpoint-response-dark", into: directory)
+        let stageSize = NSSize(width: 1360, height: 740)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 540) {
+            BreakpointEditor(center: center, item: center.paused[0])
+        }, size: stageSize, dark: false, name: "14-breakpoint-request", into: directory)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 540) {
+            BreakpointEditor(center: center, item: center.paused[1])
+        }, size: stageSize, dark: true, name: "15-breakpoint-response-dark", into: directory)
         try await shoot(SettingsView(model: model, certificates: storage, license: proLicense, helper: helper, tab: .breakpoints),
                         size: NSSize(width: 560, height: 560), dark: false, name: "16-settings-breakpoints", into: directory)
         center.resumeAll()
@@ -200,17 +203,31 @@ enum Screenshots {
             model.selection = publish.id
             model.prepareReplay(of: publish)
         }
+        // As in the mockup: an MQTT 5 broker with two properties, and Format pressed on the payload.
+        model.composer.target.version = .v5
+        model.composer.contentType = "application/json"
+        model.composer.userProperties = [.init(key: "source", value: "wiretide")]
+        model.composer.formatPayload()
+        model.composer.qos = .atLeastOnce
+        model.composer.retain = true
         model.composer.repeatCount = 5
         model.composer.intervalMilliseconds = 500
-        let composerSize = NSSize(width: 820, height: 560)
-        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: false, name: "18-mqtt-replay", into: directory)
-        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: true, name: "19-mqtt-replay-dark", into: directory)
+        let stage = NSSize(width: 1360, height: 740)
+        func composerStage() -> some View {
+            SheetStage(background: ContentView(model: model, certificates: storage, license: proLicense), height: 520) {
+                MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
+            }
+        }
+        try await shoot(composerStage(), size: stage, dark: false, name: "18-mqtt-replay", into: directory)
+        try await shoot(composerStage(), size: stage, dark: true, name: "19-mqtt-replay-dark", into: directory)
 
         model.apply(freeLicense.entitlement)
         model.preparePublish(toTopic: "home/kitchen/light/set")
         model.composer.payloadText = #"{"on": true, "brightness": 80}"#
         model.composer.repeatCount = 1
-        try await shoot(MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic)), size: composerSize, dark: false, name: "20-mqtt-publish-free", into: directory)
+        try await shoot(SheetStage(background: ContentView(model: model, certificates: storage, license: freeLicense), height: 560) {
+            MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
+        }, size: stage, dark: false, name: "20-mqtt-publish-free", into: directory)
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL) async throws {
@@ -220,7 +237,7 @@ enum Screenshots {
         window.isReleasedWhenClosed = false
         window.title = name.contains("settings") ? "Settings" : "Wiretide"
         // Matches the app's main window, which hides its title (`.unified(showsTitle: false)`).
-        if V.self == ContentView.self { window.titleVisibility = .hidden }
+        if !name.contains("settings") { window.titleVisibility = .hidden }
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let hosting = NSHostingView(rootView: view)
         hosting.sceneBridgingOptions = [.toolbars, .title]
@@ -263,6 +280,29 @@ enum Screenshots {
         try png.write(to: url)
     }
 }
+/// A sheet drawn over the dimmed main window, the way the mockups show sheets. A real sheet is its own window,
+/// which a window capture leaves out, so screenshots compose the two instead.
+private struct SheetStage<Background: View, Sheet: View>: View {
+    let background: Background
+    var width: CGFloat = 760
+    let height: CGFloat
+    @ViewBuilder var sheet: Sheet
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            background
+                .allowsHitTesting(false)
+            Color.black.opacity(0.42).ignoresSafeArea()
+            sheet
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: 20)
+                .padding(.top, 52)
+        }
+    }
+}
+
 /// The CI runner's screen is small; let windows extend past it so shots are taken at full size.
 private final class UnconstrainedWindow: NSWindow {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }

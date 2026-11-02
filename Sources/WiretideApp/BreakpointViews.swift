@@ -112,19 +112,15 @@ struct BreakpointEditor: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
-                .frame(width: 340)
+                .frame(width: 300)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
 
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
                         if binaryBody == nil {
-                            Picker("Format", selection: $bodyFormat) {
-                                ForEach(BodyFormat.allCases) { Text($0.rawValue).tag($0) }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .frame(width: 130)
+                            PillSegments(options: BodyFormat.allCases.map { ($0, $0.rawValue) }, selection: $bodyFormat)
+                                .frame(width: 130)
                         } else {
                             CapsLabel("Body")
                         }
@@ -156,7 +152,7 @@ struct BreakpointEditor: View {
             }
             footer
         }
-        .frame(minWidth: 820, idealWidth: 880, minHeight: 560, idealHeight: 620)
+        .frame(minWidth: 740, idealWidth: 760, minHeight: 520, idealHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Theme.accent)
         .onAppear(perform: load)
@@ -172,37 +168,22 @@ struct BreakpointEditor: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "pause.fill")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Theme.warning)
-                .frame(width: 28, height: 28)
-                .background(Theme.warning.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(isRequest ? "Request paused" : "Response paused")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(isRequest ? "before it was sent" : "before the app sees it")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 8) {
-                    TypePill(text: item.request.method.uppercased(),
-                             color: Theme.color(forPill: item.request.method.uppercased(), kind: .http), fixedWidth: nil)
-                    URLText(url: item.request.url)
-                        .lineLimit(1)
-                }
-            }
+        HStack(spacing: 12) {
+            Text(isRequest ? "Request paused" : "Response paused")
+                .font(.system(size: 14, weight: .semibold))
+            Text(isRequest ? "before it was sent" : "before the app sees it")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             Spacer()
-            let waiting = center.paused.count - 1
-            if waiting > 0 {
-                Text("\(waiting) more waiting")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(Theme.warning.opacity(0.15), in: Capsule())
-                    .foregroundStyle(Theme.warning)
+            HStack(spacing: 7) {
+                StatusDot(color: Theme.warning, halo: true)
+                Text(center.paused.count > 1 ? "\(center.paused.count - 1) more waiting" : "Breakpoint")
+                    .font(.system(size: 12))
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Theme.fill, in: Capsule())
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -211,16 +192,17 @@ struct BreakpointEditor: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
+            Text("Paused at \(item.pausedAt.formatted(date: .omitted, time: .standard)) · continues unchanged after \(minutes)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer()
             Button("Abort", role: .destructive) { center.abort(item.id) }
                 .buttonStyle(ChipButtonStyle())
                 .help(isRequest ? "Don't send it; the app gets a 502 error" : "Drop the response; the app gets a 502 error")
-            Text("Paused \(item.pausedAt.formatted(date: .omitted, time: .standard)) · continues unchanged after \(minutes)")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            Spacer()
-            Button("Reset Edits") { load() }
+            Button("Reset") { load() }
                 .buttonStyle(ChipButtonStyle())
+                .help("Undo your edits")
             Button("Continue") { center.resumeUnchanged(item.id) }
                 .buttonStyle(ChipButtonStyle())
                 .help("Let it through without your edits")
@@ -228,6 +210,7 @@ struct BreakpointEditor: View {
                 resume()
             } label: {
                 HStack(spacing: 6) {
+                    Image(systemName: isRequest ? "paperplane.fill" : "arrow.uturn.left").font(.system(size: 11))
                     Text(isRequest ? "Send edited" : "Return edited")
                     Text("⌘↩").opacity(0.7)
                 }

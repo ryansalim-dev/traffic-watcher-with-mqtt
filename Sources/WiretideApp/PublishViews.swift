@@ -17,13 +17,13 @@ struct MQTTComposerView: View {
             header
             HStack(spacing: 0) {
                 settings
-                    .frame(width: 290)
+                    .frame(width: 280)
                     .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
                 payloadEditor
             }
             footer
         }
-        .frame(minWidth: 780, idealWidth: 820, minHeight: 520, idealHeight: 560)
+        .frame(minWidth: 740, idealWidth: 760, minHeight: 500, idealHeight: 540)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Theme.accent)
     }
@@ -89,20 +89,18 @@ struct MQTTComposerView: View {
                     }
                 }
                 FieldGroup(label: "QoS") {
-                    Picker("QoS", selection: $composer.qos) {
-                        Text("0").tag(MQTTQoS.atMostOnce)
-                        Text("1").tag(MQTTQoS.atLeastOnce)
-                        Text("2").tag(MQTTQoS.exactlyOnce)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .help("0: at most once · 1: at least once · 2: exactly once")
+                    PillSegments(options: [(MQTTQoS.atMostOnce, "0"), (.atLeastOnce, "1"), (.exactlyOnce, "2")],
+                                 selection: $composer.qos)
+                        .help("0: at most once · 1: at least once · 2: exactly once")
                 }
-                Toggle(isOn: $composer.retain) {
+                HStack {
                     Text("Retain").font(.system(size: 12.5))
+                    Spacer()
+                    Toggle("Retain", isOn: $composer.retain)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
                 if composer.target.version == .v5 {
                     FieldGroup(label: "Properties") {
                         PropertyRow(key: .constant("content-type"), value: $composer.contentType, fixedKey: true, prompt: "none")
@@ -144,12 +142,9 @@ struct MQTTComposerView: View {
     private var payloadEditor: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Picker("Format", selection: $composer.payloadFormat) {
-                    ForEach(MQTTComposer.PayloadFormat.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 190)
+                PillSegments(options: MQTTComposer.PayloadFormat.allCases.map { ($0, $0.rawValue) },
+                             selection: $composer.payloadFormat)
+                    .frame(width: 190)
                 Spacer()
                 if let payload = composer.payload {
                     Text(payloadSummary(payload))
