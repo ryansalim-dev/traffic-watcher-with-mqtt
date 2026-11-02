@@ -415,34 +415,23 @@ struct AddFilterMenu: View {
     private static let methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
     var body: some View {
-        Menu {
-            Menu("Method") {
-                ForEach(Self.methods, id: \.self) { method in
-                    Button(method) { model.methodFilter = method }
-                }
-            }
-            Menu("Status") {
-                ForEach(2...5, id: \.self) { statusClass in
-                    Button("\(statusClass)xx") { model.statusClassFilter = statusClass }
-                }
-            }
+        DropdownMenu("Filter", systemImage: "plus") {
+            var items: [DropdownItem] = [
+                .submenu("Method", checked: model.methodFilter != nil, Self.methods.map { method -> DropdownItem in
+                    .button(method, checked: model.methodFilter == method) { model.methodFilter = method }
+                }),
+                .submenu("Status", checked: model.statusClassFilter != nil, (2...5).map { statusClass -> DropdownItem in
+                    .button("\(statusClass)xx", checked: model.statusClassFilter == statusClass) { model.statusClassFilter = statusClass }
+                }),
+            ]
             let hosts = model.topHosts(limit: 12)
             if !hosts.isEmpty {
-                Menu("Host") {
-                    ForEach(hosts) { entry in
-                        Button(entry.host) { model.hostFilter = entry.host }
-                    }
-                }
+                items.append(.submenu("Host", checked: model.hostFilter != nil, hosts.map { entry -> DropdownItem in
+                    .button(entry.host, checked: model.hostFilter == entry.host) { model.hostFilter = entry.host }
+                }))
             }
-        } label: {
-            Text("+ Filter")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+            return items
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .padding(.horizontal, 6)
         .help("Filter by method, status or host")
     }
 }

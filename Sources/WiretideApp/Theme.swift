@@ -42,6 +42,8 @@ enum Theme {
 
     /// A quiet fill for capsules, fields and cards.
     static let fill = Color(light: 0x000000, lightOpacity: 0.05, dark: 0xFFFFFF, darkOpacity: 0.06)
+    /// The fill under a hovered or open control.
+    static let fillStrong = Color(light: 0x000000, lightOpacity: 0.08, dark: 0xFFFFFF, darkOpacity: 0.10)
     static let hairline = Color(light: 0x000000, lightOpacity: 0.08, dark: 0xFFFFFF, darkOpacity: 0.07)
 
     // MARK: Type
