@@ -24,7 +24,7 @@ struct MQTTComposerView: View {
             footer
         }
         .frame(minWidth: 740, idealWidth: 760, minHeight: 500, idealHeight: 540)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.panel)
         .tint(Theme.accent)
     }
 
@@ -222,7 +222,7 @@ struct MQTTComposerView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.bar)
+        .background(Theme.bar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 

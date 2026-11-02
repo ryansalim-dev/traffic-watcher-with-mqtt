@@ -13,6 +13,7 @@ struct ContentView: View {
     @State var mqttMode = MQTTMode.packets
     @State var selectedTopic: TopicNode.ID?
     @State var showInspector = true
+    @State var columnVisibility = NavigationSplitViewVisibility.all
     /// Off only in screenshots that draw a sheet over the window themselves.
     var presentsSheets = true
     @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
@@ -26,9 +27,11 @@ struct ContentView: View {
     private var showsSetup: Bool { model.rows.isEmpty && model.searchText.isEmpty }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(model: model, license: license)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 228)
+                // The mockup puts the sidebar button in the content toolbar, next to the recording capsule.
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
                 if showsTopics {
@@ -41,65 +44,80 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 460)
+            .background(Theme.canvas)
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation {
+                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                        }
+                    } label: {
+                        Label("Sidebar", systemImage: "sidebar.leading")
+                    }
+                    .help("Show or hide the sidebar (⌃⌘S)")
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                }
+                ToolbarItem(placement: .navigation) {
+                    RecordingCapsule(model: model)
+                }
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
                         PillSegments(options: MQTTMode.allCases.map { ($0, $0.rawValue) }, selection: $mqttMode)
                             .frame(width: 170)
                     }
                 }
-            }
-            .inspector(isPresented: showsSetup ? .constant(false) : $showInspector) {
-                Group {
-                    if showsTopics {
-                        TopicDetailView(model: model, topic: selectedTopic) { topic in
-                            model.preparePublish(toTopic: topic)
-                            model.composer.isPresented = true
-                        } onReplayLast: { topic in
-                            if model.prepareReplayOfLatest(onTopic: topic) { model.composer.isPresented = true }
-                        }
-                    } else {
-                        InspectorView(model: model)
-                    }
+                ToolbarItem(placement: .primaryAction) {
+                    ToolbarSearchField(text: $model.searchText,
+                                       prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads")
                 }
-                .inspectorColumnWidth(min: 380, ideal: 420, max: 800)
-                .toolbar {
-                    ToolbarItem {
-                        InspectorCopyButton(model: model, topic: showsTopics ? selectedTopic : nil)
+                ToolbarItem(placement: .primaryAction) {
+                    BreakpointsToggle(center: model.breakpoints)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.composer.isPresented = true
+                    } label: {
+                        Label("Publish", systemImage: "paperplane")
                     }
-                    ToolbarItem {
-                        Button {
-                            showInspector.toggle()
-                        } label: {
-                            Label("Inspector", systemImage: "sidebar.trailing")
-                        }
-                        .help("Show or hide the inspector (⌥⌘I)")
-                        .keyboardShortcut("i", modifiers: [.command, .option])
+                    .help("Publish an MQTT message (⇧⌘P)")
+                }
+                // While the inspector is closed its toolbar part is gone, so the button to reopen it lives here.
+                if !showInspector && !showsSetup {
+                    ToolbarItem(placement: .primaryAction) {
+                        InspectorToggle(isOn: $showInspector)
                     }
                 }
             }
         }
+        // On the split view rather than the detail column, the inspector is a full-height column with its own
+        // part of the toolbar, as in the mockup.
+        .inspector(isPresented: showsSetup ? .constant(false) : $showInspector) {
+            Group {
+                if showsTopics {
+                    TopicDetailView(model: model, topic: selectedTopic) { topic in
+                        model.preparePublish(toTopic: topic)
+                        model.composer.isPresented = true
+                    } onReplayLast: { topic in
+                        if model.prepareReplayOfLatest(onTopic: topic) { model.composer.isPresented = true }
+                    }
+                } else {
+                    InspectorView(model: model)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Theme.panel.ignoresSafeArea())
+            .inspectorColumnWidth(min: 380, ideal: 420, max: 800)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorCopyButton(model: model, topic: showsTopics ? selectedTopic : nil)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorToggle(isOn: $showInspector)
+                }
+            }
+        }
+        .toolbarBackground(Theme.bar, for: .windowToolbar)
         .tint(Theme.accent)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                RecordingCapsule(model: model)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                ToolbarSearchField(text: $model.searchText,
-                                   prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                BreakpointsToggle(center: model.breakpoints)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.composer.isPresented = true
-                } label: {
-                    Label("Publish", systemImage: "paperplane")
-                }
-                .help("Publish an MQTT message (⇧⌘P)")
-            }
-        }
         .sheet(isPresented: Binding(get: { presentsSheets && model.composer.isPresented }, set: { model.composer.isPresented = $0 })) {
             MQTTComposerView(composer: model.composer,
                              suggestions: model.topicSuggestions(excluding: model.composer.topic)) { model.composer.isPresented = false }
@@ -253,7 +271,7 @@ struct FilterBar: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .background(.bar)
+        .background(Theme.canvas)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
@@ -377,6 +395,23 @@ struct ToolbarSearchField: View {
     }
 }
 
+/// Shows or hides the inspector; drawn in the accent color while the inspector is open, like the mockup.
+struct InspectorToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            withAnimation { isOn.toggle() }
+        } label: {
+            Label("Inspector", systemImage: "sidebar.trailing")
+                .foregroundStyle(isOn ? Theme.accent : .secondary)
+        }
+        .help(isOn ? "Hide the inspector (⌥⌘I)" : "Show the inspector (⌥⌘I)")
+        .keyboardShortcut("i", modifiers: [.command, .option])
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
 /// Copies the selected request as cURL, or the selected topic, from the inspector's toolbar.
 struct InspectorCopyButton: View {
     let model: CaptureViewModel
@@ -441,7 +476,7 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: Binding(get: { model.section }, set: { model.section = $0 ?? .all })) {
-            Section("Capture") {
+            Section {
                 ForEach(TrafficSection.allCases) { section in
                     HStack(spacing: 0) {
                         Label {
@@ -454,19 +489,19 @@ struct SidebarView: View {
                     }
                     .tag(section)
                 }
-            }
+            } header: { SidebarHeader("Capture") }
             let hosts = model.topHosts()
             if !hosts.isEmpty {
-                Section("Hosts") {
+                Section {
                     ForEach(hosts) { entry in
                         HostRow(entry: entry, isOn: model.hostFilter == entry.host) {
                             model.hostFilter = model.hostFilter == entry.host ? nil : entry.host
                         }
                     }
-                }
+                } header: { SidebarHeader("Hosts") }
             }
             if !model.configuration.forwarders.isEmpty {
-                Section("Brokers") {
+                Section {
                     ForEach(model.configuration.forwarders) { forwarder in
                         HStack(spacing: 9) {
                             StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
@@ -486,10 +521,10 @@ struct SidebarView: View {
                         .padding(.vertical, 2)
                         .help("Connect your app to localhost:\(String(forwarder.listenPort)) to capture \(forwarder.label)")
                     }
-                }
+                } header: { SidebarHeader("Brokers") }
             }
             if !model.pinnedHosts.isEmpty {
-                Section("Rejected Certificates") {
+                Section {
                     ForEach(model.pinnedHosts, id: \.self) { host in
                         HStack {
                             Label {
@@ -504,10 +539,12 @@ struct SidebarView: View {
                                 .help("Stop decrypting \(host); its traffic is relayed untouched")
                         }
                     }
-                }
+                } header: { SidebarHeader("Rejected Certificates") }
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Theme.sidebar.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(model: model, license: license)
         }
@@ -536,6 +573,19 @@ struct SidebarView: View {
             .font(.system(size: 11.5, weight: isAlert ? .semibold : .regular))
             .monospacedDigit()
             .foregroundStyle(isAlert ? AnyShapeStyle(Theme.failure) : AnyShapeStyle(.tertiary))
+    }
+}
+
+/// Uppercase, tracked section titles, as in the mockup's sidebar.
+struct SidebarHeader: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 10.5, weight: .semibold))
+            .kerning(0.7)
+            .foregroundStyle(.tertiary)
     }
 }
 
@@ -751,7 +801,9 @@ struct TrafficTimeline: View {
                 .width(100)
                 .customizationID("time")
             }
-            .tableStyle(.inset(alternatesRowBackgrounds: true))
+            .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .scrollContentBackground(.hidden)
+            .background(Theme.canvas)
             .onChange(of: model.section, initial: true) {
                 let visibility: Visibility = model.section == .mqtt ? .hidden : .automatic
                 columns[visibility: "code"] = visibility

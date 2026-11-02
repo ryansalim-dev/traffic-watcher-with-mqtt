@@ -50,7 +50,7 @@ struct TopicColumnsHeader: View {
         .padding(.leading, 30)
         .padding(.trailing, 22)
         .frame(height: 28)
-        .background(.bar)
+        .background(Theme.canvas)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 }
@@ -300,7 +300,7 @@ struct TopicStats: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.panel)
     }
 }
 

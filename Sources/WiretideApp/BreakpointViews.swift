@@ -153,7 +153,7 @@ struct BreakpointEditor: View {
             footer
         }
         .frame(minWidth: 740, idealWidth: 760, minHeight: 520, idealHeight: 560)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.panel)
         .tint(Theme.accent)
         .onAppear(perform: load)
         .interactiveDismissDisabled()
@@ -220,7 +220,7 @@ struct BreakpointEditor: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.bar)
+        .background(Theme.bar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 
