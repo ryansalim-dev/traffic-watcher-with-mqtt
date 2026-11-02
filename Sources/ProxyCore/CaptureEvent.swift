@@ -12,6 +12,34 @@ public struct CapturedHeader: Equatable, Hashable, Sendable, Codable {
     }
 }
 
+/// A row in a header editor: a header that can be switched off without deleting it.
+public struct EditableHeader: Equatable, Hashable, Sendable, Codable, Identifiable {
+    public var id: UUID
+    public var isEnabled: Bool
+    public var name: String
+    public var value: String
+
+    public init(id: UUID = UUID(), isEnabled: Bool = true, name: String, value: String) {
+        self.id = id
+        self.isEnabled = isEnabled
+        self.name = name
+        self.value = value
+    }
+
+    public init(_ header: CapturedHeader) {
+        self.init(name: header.name, value: header.value)
+    }
+
+    /// The headers that go on the wire: enabled rows with a name, in order. Duplicate names are kept.
+    public static func sent(_ rows: [EditableHeader]) -> [CapturedHeader] {
+        rows.compactMap { row in
+            let name = row.name.trimmingCharacters(in: .whitespaces)
+            guard row.isEnabled, !name.isEmpty else { return nil }
+            return CapturedHeader(name: name, value: row.value.trimmingCharacters(in: .whitespaces))
+        }
+    }
+}
+
 /// One plain-HTTP request and its response (or the error that replaced it).
 public struct HTTPExchange: Equatable, Sendable, Identifiable, Codable {
     public var id: UUID

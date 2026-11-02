@@ -471,7 +471,6 @@ struct MatchSummary: View {
 /// Map Local: status, headers and a body typed in or read from a file.
 struct MapLocalEditor: View {
     @Binding var response: MapLocalResponse
-    @State private var headersText = ""
     @State private var source: Source = .inline
 
     enum Source: String, CaseIterable, Identifiable {
@@ -495,14 +494,7 @@ struct MapLocalEditor: View {
                             .foregroundStyle(Theme.color(forStatus: response.statusCode))
                     }
                 }
-                FieldGroup(label: "Headers · one per line") {
-                    CodeEditor(text: $headersText, fontSize: 12)
-                        .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                }
+                HeaderEditor(rows: $response.editableHeaders)
                 Text("Content-Length is set for you. Without a Content-Type, a file's extension picks one.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.tertiary)
@@ -510,7 +502,7 @@ struct MapLocalEditor: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .frame(width: 280)
+            .frame(width: 320)
             .frame(maxHeight: .infinity, alignment: .top)
             .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
 
@@ -543,10 +535,8 @@ struct MapLocalEditor: View {
             }
         }
         .onAppear {
-            headersText = HeaderText.format(response.headers)
             source = (response.filePath ?? "").isEmpty ? .inline : .file
         }
-        .onChange(of: headersText) { response.headers = HeaderText.parse(headersText) }
         .onChange(of: source) {
             if source == .inline { response.filePath = nil } else if response.filePath == nil { response.filePath = "" }
         }
