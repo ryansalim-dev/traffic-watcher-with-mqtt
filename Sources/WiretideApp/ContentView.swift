@@ -65,12 +65,14 @@ struct ContentView: View {
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
                         PillSegments(options: MQTTMode.allCases.map { ($0, $0.rawValue) }, selection: $mqttMode)
-                            .frame(width: 170)
+                            .frame(width: 150)
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
+                    // Narrower next to the Packets/Topics switch, so every toolbar button still fits.
                     ToolbarSearchField(text: $model.searchText,
-                                       prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads")
+                                       prompt: showsTopics ? "Filter topics" : "Filter URLs, headers, topics, payloads",
+                                       width: model.section == .mqtt ? 160 : 220)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     BreakpointsToggle(center: model.breakpoints)
@@ -355,6 +357,7 @@ struct AddFilterMenu: View {
 struct ToolbarSearchField: View {
     @Binding var text: String
     let prompt: String
+    var width: CGFloat = 220
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -386,7 +389,7 @@ struct ToolbarSearchField: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: 220, height: 28)
+        .frame(width: width, height: 28)
         .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -540,6 +543,7 @@ struct SidebarView: View {
                             Spacer()
                             Button("Bypass") { model.bypass(host: host) }
                                 .buttonStyle(.borderless)
+                                .foregroundStyle(Theme.accent)
                                 .controlSize(.small)
                                 .help("Stop decrypting \(host); its traffic is relayed untouched")
                         }

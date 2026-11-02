@@ -24,7 +24,9 @@ struct TopicTreeView: View {
                 List(selection: $selection) {
                     ForEach(roots) { TopicBranch(node: $0, collapsed: $collapsed, now: context.date) }
                 }
-                .listStyle(.inset(alternatesRowBackgrounds: true))
+                .listStyle(.inset(alternatesRowBackgrounds: false))
+                .scrollContentBackground(.hidden)
+                .background(Theme.canvas)
                 .safeAreaInset(edge: .top, spacing: 0) { TopicColumnsHeader() }
             }
         }
