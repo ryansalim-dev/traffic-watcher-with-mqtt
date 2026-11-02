@@ -7,6 +7,7 @@ import ProxyCore
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.openWindow) private var openWindow
     @Bindable var model: CaptureViewModel
     let certificates: CertificateStorage
     let license: LicenseManager
@@ -86,6 +87,9 @@ struct ContentView: View {
                     BreakpointsToggle(center: model.breakpoints)
                 }
                 ToolbarItem(placement: .primaryAction) {
+                    RulesToolbarButton(center: model.rewrites)
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button {
                         model.composer.isPresented = true
                     } label: {
@@ -142,6 +146,11 @@ struct ContentView: View {
             BreakpointEditor(center: model.breakpoints, item: item)
                 .id(item.id)
         }
+        .onChange(of: model.rewrites.isPresented) {
+            guard model.rewrites.isPresented else { return }
+            model.rewrites.isPresented = false
+            if presentsSheets { openWindow(id: RulesWindow.id) }
+        }
         .task {
             model.sessionLimit = license.sessionLimit
             model.apply(license.entitlement)
@@ -166,7 +175,7 @@ struct ContentView: View {
 
 /// Gives the hosting window a transparent title bar over the mockup's toolbar color. Without this the window
 /// draws its own neutral gray title bar behind the content column's toolbar.
-private struct GraphiteWindow: NSViewRepresentable {
+struct GraphiteWindow: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { WindowHook() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
@@ -677,6 +686,18 @@ struct SidebarFooter: View {
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(Theme.warning)
             }
+            if model.rewrites.isActive && model.rewrites.enabledCount > 0 {
+                Button {
+                    model.rewrites.isPresented = true
+                } label: {
+                    Label("\(model.rewrites.enabledCount) map & rewrite rule\(model.rewrites.enabledCount == 1 ? "" : "s") on",
+                          systemImage: "arrow.triangle.swap")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .help("Open Map & Rewrite (⇧⌘M)")
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     StatusDot(color: model.isCapturing ? Theme.success : Theme.neutral, halo: model.isCapturing)
@@ -1044,6 +1065,12 @@ struct TimelineRowMenu: View {
             Button("Add Breakpoint for \(exchange.method) \(BreakpointLabel.path(exchange.url))") {
                 _ = model.addBreakpoint(for: row)
             }
+            Divider()
+            Button("Map Local…") { _ = model.addRule(.mapLocal, for: row) }
+                .help("Answer this request with an editable copy of its response")
+            Button("Map Remote…") { _ = model.addRule(.mapRemote, for: row) }
+            Button("Rewrite…") { _ = model.addRule(.rewrite, for: row) }
+            Divider()
             Button("Copy URL") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(exchange.url, forType: .string)
@@ -1053,6 +1080,7 @@ struct TimelineRowMenu: View {
                 Button("Replay…") {
                     if model.prepareReplay(of: row) { model.composer.isPresented = true }
                 }
+                Button("Rewrite Messages on This Topic…") { _ = model.addMQTTRule(for: row) }
             }
             if let topic = capture.event.resolvedTopic {
                 Button("Publish to \(topic)…") {

@@ -85,6 +85,12 @@ struct HTTPInspector: View {
                         .foregroundStyle(Theme.warning)
                         .font(.system(size: 12))
                 }
+                if let rules = exchange.rewrittenBy {
+                    Label(Self.rulesNote(rules, mappedLocally: exchange.mappedLocally == true), systemImage: "arrow.triangle.swap")
+                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 12))
+                        .lineLimit(2)
+                }
                 TimingSummary(timing: exchange.timing, total: exchange.duration)
                     .padding(.top, 2)
                 PillSegments(options: Part.allCases.map { ($0, $0.rawValue) }, selection: $part)
@@ -113,6 +119,12 @@ struct HTTPInspector: View {
 }
 
 extension HTTPInspector {
+    static func rulesNote(_ rules: [String], mappedLocally: Bool) -> String {
+        let names = rules.map { "“\($0)”" }.formatted(.list(type: .and))
+        if mappedLocally { return "Answered by Map Local \(names); the server wasn't contacted" }
+        return "Changed by \(rules.count == 1 ? "rule" : "rules") \(names); shown as sent and returned"
+    }
+
     static func breakpointNote(_ stages: BreakpointStages) -> String {
         switch stages {
         case .request: "Paused at a breakpoint before sending; shown as sent"
@@ -198,6 +210,13 @@ struct MQTTInspector: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let rules = capture.rewrittenBy {
+                    Label("Changed by \(rules.count == 1 ? "rule" : "rules") \(rules.map { "“\($0)”" }.formatted(.list(type: .and))); shown as forwarded",
+                          systemImage: "arrow.triangle.swap")
+                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 12))
+                        .lineLimit(2)
+                }
                 if publish != nil, let onReplay {
                     HStack(spacing: 8) {
                         Button {
