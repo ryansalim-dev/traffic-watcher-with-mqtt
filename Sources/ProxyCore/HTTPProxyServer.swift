@@ -439,6 +439,7 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
         context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { _ in }
         let tls = origin == nil ? nil : shared.upstreamTLS
         let host = target.host
+        let liveRules = configuration.rules
         ClientBootstrap(group: context.eventLoop)
             .connectTimeout(.seconds(15))
             .channelOption(ChannelOptions.autoRead, value: false)
@@ -461,10 +462,11 @@ final class ProxyRequestHandler: ChannelInboundHandler, RemovableChannelHandler 
                     context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
                     self.respondWithError(context: context, status: .badGateway, message: failed.error!)
                 case .success(let upstream):
-                    let tap = WebSocketTap(sink: self.sink, request: exchange)
+                    let tap = WebSocketTap(sink: self.sink, request: exchange, rules: liveRules)
+                    let allocator = upstream.allocator
                     let (clientSide, serverSide) = GlueHandler.pair(
-                        onReadA: { tap.receiveFromClient($0) },
-                        onReadB: { tap.receiveFromServer($0) }
+                        transformA: { allocator.buffer(bytes: tap.receiveFromClient(Array($0.readableBytesView))) },
+                        transformB: { allocator.buffer(bytes: tap.receiveFromServer(Array($0.readableBytesView))) }
                     )
                     upstream.writeAndFlush(requestBuffer, promise: nil)
                     self.switchProtocols(context: context, answerConnect: false, onFailure: { upstream.close(promise: nil) }) { pipeline in

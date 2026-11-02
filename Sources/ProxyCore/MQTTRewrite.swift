@@ -263,4 +263,9 @@ final class MQTTRelay {
         }
         return output
     }
+
+    /// Hands back the bytes of an incomplete packet held for `direction`, for a caller that stops relaying.
+    func takePending(from direction: MQTTDirection) -> [UInt8] {
+        pending.removeValue(forKey: direction) ?? []
+    }
 }
