@@ -20,6 +20,8 @@ struct ContentView: View {
     /// Screenshots only: a sheet drawn over the dimmed window, since a real sheet is a separate window.
     var stagedSheet: AnyView?
     @AppStorage(RowDensity.storageKey) private var density = RowDensity.regular
+    /// The content column's width, which its part of the toolbar spans (see `toolbarFit`).
+    @State private var detailWidth: CGFloat = 800
 
     enum MQTTMode: String, CaseIterable, Identifiable {
         case packets = "Packets", topics = "Topics"
@@ -34,6 +36,12 @@ struct ContentView: View {
         case .http: return "Filter URLs, headers, bodies"
         default: return "Filter URLs, topics, payloads"
         }
+    }
+
+    /// What fits in the content column's part of the toolbar, so the capsule and the field never overlap the buttons.
+    private var toolbarFit: ToolbarFit {
+        let inspectorButton = !showInspector && !showsSetup
+        return .fitting(width: detailWidth, buttons: 5 + (inspectorButton ? 1 : 0), showsModeSwitch: model.section == .mqtt)
     }
 
     private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
@@ -63,8 +71,16 @@ struct ContentView: View {
                         }
                 }
             }
-            .frame(minWidth: 460)
+            // Fills the column, so an empty state sits in its middle rather than shrinking the column's content to fit.
+            .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.canvas)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { detailWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { detailWidth = proxy.size.width }
+                }
+            }
             // The system toolbar material tints the mockup's graphite toward neutral gray, so the toolbar is made
             // transparent and this strip, stretched up into the toolbar's safe area, paints the mockup's color.
             .overlay(alignment: .top) {
@@ -86,7 +102,7 @@ struct ContentView: View {
                     .keyboardShortcut("s", modifiers: [.command, .control])
                 }
                 ToolbarItem(placement: .navigation) {
-                    RecordingCapsule(model: model)
+                    RecordingCapsule(model: model, fit: toolbarFit)
                 }
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
@@ -95,10 +111,10 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    // Narrower next to the Packets/Topics switch, so every toolbar button still fits.
+                    // Narrows, then folds into a button, as the column narrows, so every toolbar button still fits.
                     ToolbarSearchField(text: $model.searchText,
                                        prompt: searchPrompt,
-                                       width: model.section == .mqtt ? 160 : 220)
+                                       width: toolbarFit.searchWidth.map { CGFloat($0) })
                 }
                 ToolbarItem(placement: .primaryAction) {
                     BreakpointsToggle(center: model.breakpoints)
@@ -214,16 +230,75 @@ struct ContentView: View {
 
 /// Gives the hosting window a transparent title bar over the mockup's toolbar color. Without this the window
 /// draws its own neutral gray title bar behind the content column's toolbar.
+///
+/// It also brings back double-clicking the title bar. SwiftUI's content reaches up under the transparent
+/// title bar and takes those clicks, so the window never zoomed. A double-click on an empty part of the title
+/// bar or toolbar now does what System Settings › Desktop & Dock › "Double-click a window's title bar" says.
 struct GraphiteWindow: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { WindowHook() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class WindowHook: NSView {
+        private var monitor: Any?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
             guard let window else { return }
             window.titlebarAppearsTransparent = true
             window.backgroundColor = NSColor(Theme.bar)
+            window.styleMask.insert(.resizable)
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak window] event in
+                // Local monitors run on the main thread, inside the app's event loop.
+                MainActor.assumeIsolated {
+                    guard let window, event.window === window, event.clickCount == 2,
+                          TitleBarDoubleClick.isOnEmptyTitleBar(event, in: window) else { return event }
+                    TitleBarDoubleClick.perform(on: window)
+                    return nil
+                }
+            }
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+}
+
+/// The system's title bar double-click, for windows whose SwiftUI content covers the title bar.
+@MainActor
+enum TitleBarDoubleClick {
+    /// True for a click in the title bar or toolbar strip that isn't on a button, field or other toolbar item.
+    static func isOnEmptyTitleBar(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard !window.styleMask.contains(.fullScreen),
+              event.locationInWindow.y >= window.contentLayoutRect.maxY,
+              let frameView = window.contentView?.superview else { return false }
+        var view = frameView.hitTest(frameView.convert(event.locationInWindow, from: nil))
+        while let current = view {
+            if current is NSControl || current is NSTextView { return false }
+            // Toolbar items are hosted in an item viewer, SwiftUI ones in a hosting view of their own. The
+            // window's content reaches up under the title bar too, so only hosting views outside it count.
+            let name = String(describing: type(of: current))
+            if name.contains("ToolbarItem") { return false }
+            if name.contains("HostingView"), let content = window.contentView, !current.isDescendant(of: content) { return false }
+            view = current.superview
+        }
+        return true
+    }
+
+    static func perform(on window: NSWindow) {
+        let defaults = UserDefaults.standard
+        switch defaults.string(forKey: "AppleActionOnDoubleClick") {
+        case "None":
+            return
+        case "Minimize":
+            window.miniaturize(nil)
+        case "Maximize", "Fill", "Zoom":
+            window.zoom(nil)
+        default:
+            // Before the action setting existed this was a yes/no for minimizing; zooming is the default.
+            if defaults.bool(forKey: "AppleMiniaturizeOnDoubleClick") { window.miniaturize(nil) } else { window.zoom(nil) }
         }
     }
 }
@@ -231,6 +306,8 @@ struct GraphiteWindow: NSViewRepresentable {
 /// Start and stop capture. While recording it shows the elapsed time, recent activity and the event count.
 struct RecordingCapsule: View {
     let model: CaptureViewModel
+    /// Which parts fit; the label, sparkline and count drop out as the toolbar narrows.
+    var fit = ToolbarFit()
 
     var body: some View {
         Button {
@@ -256,22 +333,28 @@ struct RecordingCapsule: View {
                 if let started = model.captureStartedAt {
                     TimelineView(.periodic(from: started, by: 1)) { context in
                         HStack(spacing: 9) {
-                            HStack(spacing: 6) {
-                                StatusDot(color: Theme.failure, halo: true)
-                                Text("Recording").fontWeight(.semibold)
+                            if fit.showsRecordingLabel {
+                                HStack(spacing: 6) {
+                                    StatusDot(color: Theme.failure, halo: true)
+                                    Text("Recording").fontWeight(.semibold)
+                                }
                             }
                             Text(Self.elapsed(from: started, to: context.date))
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
-                            Sparkline(values: model.activity(now: context.date))
-                                .frame(width: 56, height: 16)
-                            Text(countLabel)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                            if fit.showsSparkline {
+                                Sparkline(values: model.activity(now: context.date))
+                                    .frame(width: 56, height: 16)
+                            }
+                            if fit.showsCount {
+                                Text(countLabel)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 } else {
-                    Text("Start Recording").fontWeight(.semibold)
+                    Text(fit.showsRecordingLabel ? "Start Recording" : "Record").fontWeight(.semibold)
                 }
             }
             .font(.system(size: 12.5))
@@ -285,7 +368,7 @@ struct RecordingCapsule: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help(model.isCapturing ? "Stop recording (⌘R)" : "Start the proxy and MQTT forwarders (⌘R)")
+        .help(model.isCapturing ? "Stop recording, \(countLabel) so far (⌘R)" : "Start the proxy and MQTT forwarders (⌘R)")
         .accessibilityLabel(model.isCapturing ? "Stop recording" : "Start recording")
     }
 
@@ -443,10 +526,33 @@ struct AddFilterMenu: View {
 struct ToolbarSearchField: View {
     @Binding var text: String
     let prompt: String
-    var width: CGFloat = 220
+    /// nil folds the field into a button that opens it in a popover, for a narrow window.
+    var width: CGFloat? = 220
     @FocusState private var focused: Bool
+    @State private var showsPopover = false
 
     var body: some View {
+        if let width {
+            field(width: width, prompt: width < 200 ? "Filter" : prompt)
+        } else {
+            Button {
+                showsPopover.toggle()
+            } label: {
+                Label("Filter", systemImage: "magnifyingglass")
+                    // Teal while a filter is on, since the field itself is out of sight.
+                    .foregroundStyle(text.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.accent))
+            }
+            .help(text.isEmpty ? "Filter (⌘F)" : "Filtering by “\(text)” (⌘F)")
+            .keyboardShortcut("f", modifiers: .command)
+            .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
+                field(width: 280, prompt: prompt)
+                    .padding(10)
+                    .onAppear { focused = true }
+            }
+        }
+    }
+
+    private func field(width: CGFloat, prompt: String) -> some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11.5, weight: .medium))
@@ -457,7 +563,7 @@ struct ToolbarSearchField: View {
                 .focused($focused)
                 .onSubmit { focused = true }
                 .onExitCommand { text = ""; focused = false }
-            if text.isEmpty {
+            if text.isEmpty && width >= 180 {
                 Text("⌘F")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
@@ -482,9 +588,11 @@ struct ToolbarSearchField: View {
                 .strokeBorder(focused ? Theme.accent.opacity(0.8) : .clear, lineWidth: 1)
         }
         .background {
-            Button("Find") { focused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .hidden()
+            if !showsPopover {
+                Button("Find") { focused = true }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .hidden()
+            }
         }
     }
 }
@@ -892,6 +1000,8 @@ struct TrafficTimeline: View {
                     model.hostFilter = nil
                 }
             }
+            // Fills the column, so the filter bar stays pinned to the top and this sits in the middle below it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let longest = rows.lazy.compactMap(\.duration).max() ?? 1
             Table(rows, selection: $model.selection, columnCustomization: $columns) {

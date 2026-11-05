@@ -234,3 +234,46 @@ final class CompactSizeTests: XCTestCase {
         XCTAssertEqual(Formatting.compactByteCount(1_400_000), "1.3 MB")
     }
 }
+
+final class ToolbarFitTests: XCTestCase {
+    func testWideColumnShowsEverything() {
+        let fit = ToolbarFit.fitting(width: 1100, buttons: 5, showsModeSwitch: false)
+        XCTAssertEqual(fit, ToolbarFit())
+    }
+
+    func testPartsDropInOrderAsTheColumnNarrows() {
+        var previous = ToolbarFit()
+        var sawFolded = false
+        for width in stride(from: 1100.0, through: 380, by: -10) {
+            let fit = ToolbarFit.fitting(width: width, buttons: 5, showsModeSwitch: false)
+            // Nothing comes back as the column narrows.
+            if !previous.showsSparkline { XCTAssertFalse(fit.showsSparkline, "\(width)") }
+            if !previous.showsRecordingLabel { XCTAssertFalse(fit.showsRecordingLabel, "\(width)") }
+            if !previous.showsCount { XCTAssertFalse(fit.showsCount, "\(width)") }
+            if let old = previous.searchWidth, let new = fit.searchWidth { XCTAssertLessThanOrEqual(new, old) }
+            if previous.searchWidth == nil { XCTAssertNil(fit.searchWidth, "\(width)") }
+            // The sparkline goes before the label, and the label before the count.
+            if fit.showsSparkline { XCTAssertTrue(fit.showsRecordingLabel) }
+            if fit.showsRecordingLabel { XCTAssertTrue(fit.showsCount) }
+            // The field only shrinks once the capsule is whole, and folds only after the count is gone.
+            if let width = fit.searchWidth, width > ToolbarFit.searchNarrowest { XCTAssertTrue(fit.showsSparkline) }
+            if fit.searchWidth == nil { sawFolded = true }
+            previous = fit
+        }
+        XCTAssertTrue(sawFolded)
+    }
+
+    func testRyansNarrowToolbarNoLongerOverflows() {
+        // The column was about 710 points wide with the sidebar and inspector open.
+        let fit = ToolbarFit.fitting(width: 710, buttons: 5, showsModeSwitch: false)
+        XCTAssertLessThan(fit.searchWidth ?? 0, ToolbarFit.searchWidest, "the full-width field is what overlapped")
+        XCTAssertNotNil(fit.searchWidth)
+    }
+
+    func testModeSwitchAndInspectorButtonTakeRoom() {
+        let plain = ToolbarFit.fitting(width: 800, buttons: 5, showsModeSwitch: false)
+        let busy = ToolbarFit.fitting(width: 800, buttons: 6, showsModeSwitch: true)
+        XCTAssertNotEqual(plain, busy)
+        XCTAssertLessThanOrEqual(busy.searchWidth ?? 0, plain.searchWidth ?? 0)
+    }
+}
