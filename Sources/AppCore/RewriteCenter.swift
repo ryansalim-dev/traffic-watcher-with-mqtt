@@ -1,4 +1,5 @@
 import Foundation
+import Licensing
 import MQTTCore
 import Observation
 import ProxyCore
@@ -25,25 +26,50 @@ public struct RewriteSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Owns the Map Local, Map Remote and Rewrite rules (Pro). Edits reach the proxy at once through
-/// `rules`; without Pro, or with the master switch off, the rules are kept but change nothing.
+/// Owns the Map Local, Map Remote and Rewrite rules. Edits reach the proxy at once through
+/// `rules`; with the master switch off the rules are kept but change nothing. Free runs `limit`
+/// rules of each kind at a time; Pro runs them all.
 @MainActor
 @Observable
 public final class RewriteCenter {
     public var httpRules: [HTTPRule] {
-        didSet { changed() }
+        didSet {
+            guard !isRefusing else { return }
+            var checked = httpRules
+            if let kind = RuleLimit.refuse(old: oldValue, new: &checked, limit: limit, isEnabled: \.isEnabled, group: \.kind) {
+                isRefusing = true
+                httpRules = checked
+                isRefusing = false
+                if let limit { limitPrompt = ProLimitPrompt(.ruleLimit(Self.promptKind(kind), limit: limit)) }
+            }
+            changed()
+        }
     }
     public var mqttRules: [MQTTRule] {
-        didSet { changed() }
+        didSet {
+            guard !isRefusing else { return }
+            var checked = mqttRules
+            if RuleLimit.refuse(old: oldValue, new: &checked, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 }) != nil {
+                isRefusing = true
+                mqttRules = checked
+                isRefusing = false
+                if let limit { limitPrompt = ProLimitPrompt(.ruleLimit(.mqttRewrite, limit: limit)) }
+            }
+            changed()
+        }
     }
     /// The master switch in the toolbar and the rules window.
     public var isEnabled: Bool {
         didSet { changed() }
     }
-    /// Whether the license allows map and rewrite.
-    public var isAllowed = false {
+    /// Enabled rules of each kind that work at once on the free tier; nil with Pro. Rules past it
+    /// are kept, and the first ones in the list keep working, so a downgrade doesn't change which run.
+    public var limit: Int? = LicensePolicy.standard.freeLimits.activeRules {
         didSet { push() }
     }
+    /// Set when turning a rule on went past `limit`; the UI shows it as a short Pro prompt.
+    public var limitPrompt: ProLimitPrompt?
+    @ObservationIgnored private var isRefusing = false
     /// The rule open in the rules window.
     public var selection: RuleSelection?
     /// Shows the rules window; set by the timeline's context menu.
@@ -68,7 +94,38 @@ public final class RewriteCenter {
     }
 
     /// True when enabled rules actually change traffic.
-    public var isActive: Bool { isEnabled && isAllowed }
+    public var isActive: Bool { isEnabled }
+
+    /// True on the free tier.
+    public var isLimited: Bool { limit != nil }
+
+    /// The enabled HTTP rules that take effect.
+    public var runningHTTPRules: [HTTPRule] {
+        let ids = RuleLimit.running(httpRules, limit: limit, isEnabled: \.isEnabled, group: \.kind)
+        return httpRules.filter { ids.contains($0.id) }
+    }
+
+    /// The enabled MQTT rules that take effect.
+    public var runningMQTTRules: [MQTTRule] {
+        let ids = RuleLimit.running(mqttRules, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 })
+        return mqttRules.filter { ids.contains($0.id) }
+    }
+
+    /// Enabled rules that the free tier's limit keeps from working.
+    public var heldRuleIDs: Set<UUID> {
+        guard limit != nil else { return [] }
+        let running = Set(runningHTTPRules.map(\.id)).union(runningMQTTRules.map(\.id))
+        let enabled = httpRules.filter(\.isEnabled).map(\.id) + mqttRules.filter(\.isEnabled).map(\.id)
+        return Set(enabled).subtracting(running)
+    }
+
+    static func promptKind(_ kind: HTTPRule.Kind) -> ProLimitPrompt.RuleKind {
+        switch kind {
+        case .mapLocal: .mapLocal
+        case .mapRemote: .mapRemote
+        case .rewrite: .rewrite
+        }
+    }
 
     /// Enabled rules, for the toolbar's count.
     public var enabledCount: Int { httpRules.filter(\.isEnabled).count + mqttRules.filter(\.isEnabled).count }
@@ -82,7 +139,7 @@ public final class RewriteCenter {
 
     private func push() {
         if isActive {
-            rules.update(http: httpRules, mqtt: mqttRules)
+            rules.update(http: runningHTTPRules, mqtt: runningMQTTRules)
         } else {
             rules.update(http: [], mqtt: [])
         }

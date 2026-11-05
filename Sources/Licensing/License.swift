@@ -70,15 +70,29 @@ public struct LicensePolicy: Equatable, Sendable {
     public var revalidationInterval: TimeInterval
     /// Saved capture sessions the free tier keeps next to the one recording now.
     public var freeSavedSessions: Int
+    /// Enabled rules of each kind (breakpoint, Map Local, Map Remote, Rewrite, MQTT Rewrite, script)
+    /// that work at the same time on the free tier.
+    public var freeActiveRules: Int
+    /// Captured MQTT messages the free tier can resend, unchanged, in each capture session.
+    public var freeReplaysPerSession: Int
 
     public init(updateWindow: DateComponents = DateComponents(year: 1),
                 offlineGracePeriod: TimeInterval = 30 * 86_400,
                 revalidationInterval: TimeInterval = 3 * 86_400,
-                freeSavedSessions: Int = 1) {
+                freeSavedSessions: Int = 1,
+                freeActiveRules: Int = 1,
+                freeReplaysPerSession: Int = 5) {
         self.updateWindow = updateWindow
         self.offlineGracePeriod = offlineGracePeriod
         self.revalidationInterval = revalidationInterval
         self.freeSavedSessions = freeSavedSessions
+        self.freeActiveRules = freeActiveRules
+        self.freeReplaysPerSession = freeReplaysPerSession
+    }
+
+    /// The limits the free tier works under.
+    public var freeLimits: FreeLimits {
+        FreeLimits(activeRules: max(1, freeActiveRules), replaysPerSession: max(0, freeReplaysPerSession))
     }
 
     public static let standard = LicensePolicy()
@@ -88,7 +102,22 @@ public struct LicensePolicy: Equatable, Sendable {
     }
 }
 
-/// Features that need Pro. The free tier captures and inspects everything; Pro adds tools on top.
+/// How far the free tier goes with the Pro tools. Free captures and inspects everything and can try
+/// each tool: a few rules at a time, and resending captured MQTT messages unchanged.
+public struct FreeLimits: Equatable, Sendable {
+    /// Enabled rules of each kind that work at once; more stay saved but switched off.
+    public var activeRules: Int
+    /// Unchanged resends of captured MQTT messages per capture session.
+    public var replaysPerSession: Int
+
+    public init(activeRules: Int, replaysPerSession: Int) {
+        self.activeRules = activeRules
+        self.replaysPerSession = replaysPerSession
+    }
+}
+
+/// Features that Pro unlocks fully. The free tier captures and inspects everything, keeps one saved
+/// session, and can use the tools within `FreeLimits`.
 public enum ProFeature: String, CaseIterable, Sendable {
     case unlimitedSessions
     case mqttPublish
@@ -103,6 +132,24 @@ public enum ProFeature: String, CaseIterable, Sendable {
         case .breakpoints: "Breakpoints"
         case .mapRewrite: "Map and rewrite"
         case .scripting: "Scripting"
+        }
+    }
+
+    /// What the free tier gets of this feature, for the License tab.
+    public func freeAllowance(_ policy: LicensePolicy) -> String {
+        let limits = policy.freeLimits
+        let rules = limits.activeRules
+        switch self {
+        case .unlimitedSessions:
+            return policy.freeSavedSessions == 1 ? "Free keeps 1 saved session" : "Free keeps \(policy.freeSavedSessions) saved sessions"
+        case .mqttPublish:
+            return "Free resends captured messages unchanged, \(limits.replaysPerSession) per session"
+        case .breakpoints:
+            return rules == 1 ? "Free runs 1 rule at a time" : "Free runs \(rules) rules at a time"
+        case .mapRewrite:
+            return rules == 1 ? "Free runs 1 rule of each kind at a time" : "Free runs \(rules) rules of each kind at a time"
+        case .scripting:
+            return rules == 1 ? "Free runs 1 script at a time" : "Free runs \(rules) scripts at a time"
         }
     }
 }
@@ -126,7 +173,14 @@ public enum Entitlement: Equatable, Sendable {
         if case .pro = self { true } else { false }
     }
 
+    /// True when Pro unlocks `feature` fully; without Pro it works within `limits(_:)`.
     public func allows(_ feature: ProFeature) -> Bool { isPro }
+
+    /// The free tier's limits, or nil on Pro (no limits). A lapsed, revoked or unchecked license
+    /// falls back to these limits too, so the tools keep working within them.
+    public func limits(_ policy: LicensePolicy = .standard) -> FreeLimits? {
+        isPro ? nil : policy.freeLimits
+    }
 
     /// Decides the entitlement from the stored license. Pure, so every rule is unit-tested.
     /// - Parameter releaseDate: when this build was released; nil for development builds,

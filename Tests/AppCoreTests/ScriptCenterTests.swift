@@ -13,11 +13,14 @@ private final class EchoEngine: ScriptEngine, @unchecked Sendable {
 
 final class ScriptCenterTests: XCTestCase {
     @MainActor
-    func testScriptsReachTheProxyOnlyWithProAndTheSwitchOn() async {
+    func testScriptsReachTheProxyOnlyWithTheSwitchOn() async {
         let script = UserScript(name: "S", source: "function onRequest(r) {}", urlPattern: "*")
-        let center = ScriptCenter(settings: ScriptSettings(scripts: [script]), makeEngine: { _ in EchoEngine("{}") })
-        XCTAssertNil(center.live.snapshot, "free tier keeps scripts but runs none")
-        center.isAllowed = true
+        let second = UserScript(name: "T", source: "function onRequest(r) {}", urlPattern: "*")
+        let center = ScriptCenter(settings: ScriptSettings(scripts: [script, second]), makeEngine: { _ in EchoEngine("{}") })
+        XCTAssertEqual(center.live.snapshot?.scripts, [script], "free tier runs one script")
+        center.limit = nil
+        XCTAssertEqual(center.live.snapshot?.scripts, [script, second])
+        center.scripts.removeLast()
         XCTAssertEqual(center.live.snapshot?.scripts, [script])
         center.isEnabled = false
         XCTAssertNil(center.live.snapshot)
@@ -103,9 +106,9 @@ final class ScriptCenterTests: XCTestCase {
         let center = ScriptCenter(makeEngine: { _ in nil })
         let model = CaptureViewModel(store: try! CaptureStore(path: ":memory:"), engine: nil, scripts: center)
         model.apply(.pro(coveredUntil: .distantFuture))
-        XCTAssertTrue(center.isAllowed)
+        XCTAssertNil(center.limit)
         model.apply(.free(.noLicense))
-        XCTAssertFalse(center.isAllowed)
+        XCTAssertEqual(center.limit, 1)
     }
 
     func testJavaScriptHighlighting() {

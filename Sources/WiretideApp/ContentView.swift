@@ -166,6 +166,9 @@ struct ContentView: View {
             BreakpointEditor(center: model.breakpoints, item: item)
                 .id(item.id)
         }
+        // "Add Breakpoint" from the timeline past the free tier's limit.
+        .proLimitPrompt(Binding(get: { presentsSheets ? model.breakpoints.limitPrompt : nil },
+                                set: { model.breakpoints.limitPrompt = $0 }))
         .onChange(of: model.rewrites.isPresented) {
             guard model.rewrites.isPresented else { return }
             model.rewrites.isPresented = false

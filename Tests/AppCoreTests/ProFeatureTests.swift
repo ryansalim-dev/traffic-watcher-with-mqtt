@@ -16,10 +16,10 @@ final class BreakpointCenterTests: XCTestCase {
     }
 
     @MainActor
-    func testOnlyPausesWhenAllowedAndEnabled() async {
+    func testOnlyPausesWhenEnabled() async {
         let center = BreakpointCenter(rules: [BreakpointRule(pattern: "api.example.com/*")])
-        XCTAssertEqual(center.handler.stages(method: "GET", url: request.url), [], "free tier never pauses")
-        center.isAllowed = true
+        XCTAssertEqual(center.handler.stages(method: "GET", url: request.url), [.request, .response], "free tier runs one rule")
+        center.limit = nil
         XCTAssertEqual(center.handler.stages(method: "GET", url: request.url), [.request, .response])
         center.isEnabled = false
         XCTAssertEqual(center.handler.stages(method: "GET", url: request.url), [])
@@ -28,7 +28,7 @@ final class BreakpointCenterTests: XCTestCase {
     @MainActor
     func testResumeWithEditsAbortAndUnchanged() async {
         let center = BreakpointCenter(rules: [BreakpointRule(pattern: "*")])
-        center.isAllowed = true
+        center.limit = nil
         let handler = center.handler
         let request = self.request
 
@@ -60,7 +60,7 @@ final class BreakpointCenterTests: XCTestCase {
     @MainActor
     func testTimeoutContinuesUnchanged() async {
         let center = BreakpointCenter(rules: [BreakpointRule(pattern: "*")], timeout: .milliseconds(50))
-        center.isAllowed = true
+        center.limit = nil
         let request = self.request
         let handler = center.handler
         let result = await handler.editRequest(request)
@@ -168,8 +168,8 @@ final class MQTTComposerTests: XCTestCase {
     func testProblemsGateSending() async {
         let composer = MQTTComposer(publisher: nil)
         composer.topic = "a/b"
-        XCTAssertEqual(composer.problem, "Publishing and replay are part of Pro.")
-        composer.isAllowed = true
+        XCTAssertEqual(composer.problem, "Writing new MQTT messages is part of Pro.")
+        composer.replayLimit = nil
         XCTAssertNil(composer.problem)
         composer.topic = "a/+"
         XCTAssertNotNil(composer.problem)
@@ -197,10 +197,10 @@ final class MQTTComposerTests: XCTestCase {
         model.composer.topic = "t"
         model.apply(.free(.noLicense))
         model.composer.send()
-        XCTAssertFalse(model.composer.isSending, "free tier can't send")
+        XCTAssertFalse(model.composer.isSending, "free tier can't send a new message")
 
         model.apply(.pro(coveredUntil: .distantFuture))
-        XCTAssertTrue(model.breakpoints.isAllowed)
+        XCTAssertNil(model.breakpoints.limit)
         model.composer.send()
         XCTAssertTrue(model.composer.isSending)
         for _ in 0..<400 where model.composer.isSending { try await Task.sleep(for: .milliseconds(10)) }

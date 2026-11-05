@@ -53,7 +53,7 @@ extension CaptureViewModel {
     @discardableResult
     public func prepareReplayOfLatest(onTopic topic: String) -> Bool {
         guard let latest = publishes(onTopic: topic).last else { return false }
-        composer.prepareReplay(of: latest, forwarders: configuration.forwarders)
+        composer.prepareReplay(of: latest, forwarders: configuration.forwarders, fromSavedSession: viewedSession != nil)
         return true
     }
 

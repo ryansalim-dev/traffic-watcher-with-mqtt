@@ -1,4 +1,5 @@
 import Foundation
+import Licensing
 import Observation
 import ProxyCore
 
@@ -17,14 +18,23 @@ public struct PausedExchange: Identifiable, Equatable, Sendable {
     public var title: String { "\(request.method) \(request.url)" }
 }
 
-/// Owns the breakpoint rules (Pro) and the exchanges paused by them. The proxy talks to it through
-/// `handler`; the UI edits the paused exchanges and resumes or aborts them.
+/// Owns the breakpoint rules and the exchanges paused by them. The proxy talks to it through
+/// `handler`; the UI edits the paused exchanges and resumes or aborts them. Free runs
+/// `limit` rules at a time; Pro runs them all.
 @MainActor
 @Observable
 public final class BreakpointCenter {
     public var rules: [BreakpointRule] {
         didSet {
-            handler.update(rules: rules, active: isActive)
+            guard !isRefusing else { return }
+            var checked = rules
+            if RuleLimit.refuse(old: oldValue, new: &checked, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 }) != nil {
+                isRefusing = true
+                rules = checked
+                isRefusing = false
+                if let limit { limitPrompt = ProLimitPrompt(.ruleLimit(.breakpoint, limit: limit)) }
+            }
+            handler.update(rules: runningRules, active: isActive)
             save?(rules)
         }
     }
@@ -32,10 +42,14 @@ public final class BreakpointCenter {
     public var isEnabled = true {
         didSet { activeChanged() }
     }
-    /// Whether the license allows breakpoints. Without Pro the rules are kept but nothing pauses.
-    public var isAllowed = false {
+    /// Enabled rules that work at once on the free tier; nil with Pro. Rules past it are kept, and
+    /// the first ones in the list keep working, so a downgrade doesn't change which ones pause.
+    public var limit: Int? = LicensePolicy.standard.freeLimits.activeRules {
         didSet { activeChanged() }
     }
+    /// Set when turning a rule on went past `limit`; the UI shows it as a short Pro prompt.
+    public var limitPrompt: ProLimitPrompt?
+    @ObservationIgnored private var isRefusing = false
     /// Paused exchanges, oldest first.
     public private(set) var paused: [PausedExchange] = []
     /// A paused exchange nobody answers continues unchanged after this long, before most clients give up.
@@ -57,11 +71,26 @@ public final class BreakpointCenter {
         self.save = save
         handler = Handler()
         handler.center = self
-        handler.update(rules: rules, active: isActive)
+        handler.update(rules: runningRules, active: isActive)
     }
 
     /// True when matching requests actually pause.
-    public var isActive: Bool { isEnabled && isAllowed }
+    public var isActive: Bool { isEnabled }
+
+    /// True on the free tier.
+    public var isLimited: Bool { limit != nil }
+
+    /// The enabled rules that take effect.
+    public var runningRules: [BreakpointRule] {
+        let ids = RuleLimit.running(rules, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 })
+        return rules.filter { ids.contains($0.id) }
+    }
+
+    /// Enabled rules that the free tier's limit keeps from working.
+    public var heldRuleIDs: Set<UUID> {
+        let running = Set(runningRules.map(\.id))
+        return Set(rules.filter { $0.isEnabled && !running.contains($0.id) }.map(\.id))
+    }
 
     // MARK: Rules
 
@@ -158,7 +187,7 @@ public final class BreakpointCenter {
     }
 
     private func activeChanged() {
-        handler.update(rules: rules, active: isActive)
+        handler.update(rules: runningRules, active: isActive)
         if !isActive { resumeAll() }
     }
 

@@ -1,10 +1,13 @@
 import Foundation
+import Licensing
 import MQTTCore
 import Observation
 import ProxyCore
 
-/// State behind the Publish sheet (Pro): the broker to connect to, the message, and how many
-/// times to send it. Replay fills it from a captured PUBLISH.
+/// State behind the Publish sheet: the broker to connect to, the message, and how many times to
+/// send it. Replay fills it from a captured PUBLISH. Free resends messages from the live capture
+/// exactly as captured, `replayLimit` times per session; Pro edits, writes new messages and
+/// replays without limits.
 @MainActor
 @Observable
 public final class MQTTComposer {
@@ -34,8 +37,14 @@ public final class MQTTComposer {
     /// Pause between repeats, in milliseconds.
     public var intervalMilliseconds = 0
 
-    /// Whether the license allows publishing.
-    public var isAllowed = false
+    /// Unchanged replays per capture session on the free tier; nil with Pro.
+    public var replayLimit: Int? = LicensePolicy.standard.freeLimits.replaysPerSession
+    /// The session recording now, which the free replays count against. Set by the view model.
+    public var replaySession: UUID?
+    /// Replays sent per session on the free tier.
+    public private(set) var replayCounts: [UUID: Int]
+    /// True when the replayed message came from a saved session rather than the one recording now.
+    public private(set) var replayIsFromSavedSession = false
     /// Drives the Publish sheet, so any view can open it after filling the composer in.
     public var isPresented = false
     public private(set) var isSending = false
@@ -51,25 +60,74 @@ public final class MQTTComposer {
 
     private let publisher: MQTTPublisher?
     private let saveTarget: ((MQTTBrokerTarget) -> Void)?
+    private let saveReplayCounts: (([UUID: Int]) -> Void)?
     private var sending: Task<Void, Never>?
 
     public init(publisher: MQTTPublisher?, target: MQTTBrokerTarget = MQTTBrokerTarget(host: "localhost"),
+                replayCounts: [UUID: Int] = [:], saveReplayCounts: (([UUID: Int]) -> Void)? = nil,
                 saveTarget: ((MQTTBrokerTarget) -> Void)? = nil) {
         self.publisher = publisher
         self.target = target
+        self.replayCounts = replayCounts
+        self.saveReplayCounts = saveReplayCounts
         self.saveTarget = saveTarget
+    }
+
+    // MARK: Free tier
+
+    /// True on the free tier.
+    public var isLimited: Bool { replayLimit != nil }
+
+    /// Free replays sent in the session recording now.
+    public var replaysUsed: Int { replaySession.flatMap { replayCounts[$0] } ?? 0 }
+
+    /// Free replays left in the session recording now; nil with Pro.
+    public var replaysLeft: Int? { replayLimit.map { max(0, $0 - replaysUsed) } }
+
+    /// True when the message is still exactly what was captured.
+    public var isUnchangedReplay: Bool {
+        guard let original = replayedExtras, replayedAt != nil else { return false }
+        return topic == original.topic && payload == original.payload && qos == original.qos
+            && retain == original.retain && (contentType.isEmpty ? nil : contentType) == original.contentType
+            && userProperties.filter { !$0.key.isEmpty } == original.userProperties
+    }
+
+    /// Why the free tier can't send this, or nil when it can (or with Pro).
+    public var freeTierBlock: ProLimitPrompt.Reason? {
+        guard let replayLimit else { return nil }
+        if replayedAt == nil { return .newMessage }
+        if replayIsFromSavedSession { return .savedSessionReplay }
+        if !isUnchangedReplay { return .editedReplay }
+        if replaysUsed + max(1, repeatCount) > replayLimit { return .replayLimit(replayLimit) }
+        return nil
+    }
+
+    /// Puts the captured message back after edits, so the free tier can resend it.
+    public func revertToCaptured() {
+        guard let original = replayedExtras, replayedAt != nil else { return }
+        load(original)
+    }
+
+    private func countReplays(_ count: Int) {
+        guard replayLimit != nil, let replaySession else { return }
+        replayCounts[replaySession, default: 0] += count
+        // Only the session recording now matters; older counts are dropped.
+        replayCounts = replayCounts.filter { $0.key == replaySession }
+        saveReplayCounts?(replayCounts)
     }
 
     // MARK: Filling in
 
     /// Prepares a replay of a captured PUBLISH: same topic, payload, QoS, retain flag and v5 properties,
     /// sent to the broker it was captured from.
-    public func prepareReplay(of capture: MQTTCaptureEvent, forwarders: [ForwarderConfiguration]) {
+    /// - Parameter fromSavedSession: true when `capture` comes from a saved session, not the live one.
+    public func prepareReplay(of capture: MQTTCaptureEvent, forwarders: [ForwarderConfiguration], fromSavedSession: Bool = false) {
         guard case .publish(let publish) = capture.event.packet else { return }
         let message = MQTTOutgoingMessage(replaying: publish, resolvedTopic: capture.event.resolvedTopic)
         load(message)
         replayedExtras = message
         replayedAt = capture.timestamp
+        replayIsFromSavedSession = fromSavedSession
         target = Self.target(forBroker: capture.broker, version: capture.event.version, forwarders: forwarders, keeping: target)
         repeatCount = 1
         status = nil
@@ -80,6 +138,7 @@ public final class MQTTComposer {
         load(MQTTOutgoingMessage(topic: topic, payload: []))
         replayedExtras = nil
         replayedAt = nil
+        replayIsFromSavedSession = false
         if let broker {
             target = Self.target(forBroker: broker, version: version ?? target.version, forwarders: forwarders, keeping: target)
         }
@@ -144,7 +203,12 @@ public final class MQTTComposer {
 
     /// Why Send is disabled, or nil when it's ready.
     public var problem: String? {
-        if !isAllowed { return "Publishing and replay are part of Pro." }
+        if let block = freeTierBlock {
+            if case .replayLimit(let limit) = block, let left = replaysLeft, left > 0 {
+                return "Free has \(left) of \(limit) replays left in this session."
+            }
+            return ProLimitPrompt(block).title + "."
+        }
         if target.host.trimmingCharacters(in: .whitespaces).isEmpty { return "Enter the broker's host." }
         if !(1...65535).contains(target.port) { return "The port must be between 1 and 65535." }
         guard let message else { return "The payload isn't valid hex." }
@@ -158,6 +222,7 @@ public final class MQTTComposer {
     public func send() {
         guard problem == nil, let message, let publisher, !isSending else { return }
         let messages = Array(repeating: message, count: repeatCount)
+        countReplays(messages.count)
         let target = self.target
         let interval = Duration.milliseconds(max(0, intervalMilliseconds))
         isSending = true

@@ -3,7 +3,7 @@ import AppCore
 import ProxyCore
 import SwiftUI
 
-/// Toolbar switch for breakpoints. Without Pro it still toggles, but shows a lock and explains.
+/// Toolbar switch for breakpoints.
 struct BreakpointsToggle: View {
     @Bindable var center: BreakpointCenter
 
@@ -33,15 +33,14 @@ struct BreakpointsToggle: View {
     }
 
     private var symbol: String {
-        if !center.isAllowed { return "pause.circle" }
-        return center.isEnabled ? "pause.circle.fill" : "pause.circle"
+        center.isEnabled ? "pause.circle.fill" : "pause.circle"
     }
 
     private var help: String {
-        if !center.isAllowed { return "Breakpoints are part of Wiretide Pro" }
-        let count = center.rules.filter(\.isEnabled).count
+        let count = center.runningRules.count
+        let free = center.isLimited ? " · Free runs 1 at a time" : ""
         return center.isEnabled
-            ? "Breakpoints on: \(count) rule\(count == 1 ? "" : "s") can pause requests (⇧⌘B)"
+            ? "Breakpoints on: \(count) rule\(count == 1 ? "" : "s") can pause requests\(free) (⇧⌘B)"
             : "Breakpoints off: nothing pauses (⇧⌘B)"
     }
 }
@@ -270,8 +269,10 @@ struct BreakpointSettings: View {
 
     var body: some View {
         Form {
-            if !center.isAllowed {
-                ProNotice(feature: "Breakpoints", detail: "Your rules are kept, but requests only pause with Pro. See the License tab.", showsUpgrade: false)
+            if let limit = center.limit {
+                FreeLimitBanner(title: limit == 1 ? "Wiretide Free runs 1 breakpoint at a time" : "Wiretide Free runs \(limit) breakpoints at a time",
+                                detail: "Keep as many rules as you like and switch between them. Pro runs them all at once; see the License tab.",
+                                showsUpgrade: false)
             }
             Section {
                 Toggle("Pause requests that match a rule", isOn: $center.isEnabled)
@@ -296,6 +297,7 @@ struct BreakpointSettings: View {
                                  selection: Binding(get: { StageChoice($rule.wrappedValue.stages) }, set: { $rule.wrappedValue.stages = $0.stages }),
                                  options: StageChoice.allCases.map { ($0, $0.rawValue) })
                             .frame(width: 112)
+                        if center.heldRuleIDs.contains(rule.id) { NeedsProBadge() }
                         Button {
                             center.rules.removeAll { $0.id == rule.id }
                         } label: {
@@ -315,6 +317,7 @@ struct BreakpointSettings: View {
             }
         }
         .formStyle(.grouped)
+        .proLimitPrompt($center.limitPrompt)
     }
 
     enum StageChoice: String, CaseIterable, Identifiable {
