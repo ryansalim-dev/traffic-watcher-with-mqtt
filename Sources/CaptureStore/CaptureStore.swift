@@ -88,24 +88,38 @@ public final class CaptureStore: CaptureSink, @unchecked Sendable {
         try withLock { try insert(event, session: _currentSession) }
     }
 
+    /// Records `events` into the current session in one transaction, in order. Live capture batches
+    /// events this way, so a burst of traffic costs one commit instead of one per event.
+    @discardableResult
+    public func append(contentsOf events: [CaptureEvent]) throws -> [StoredCaptureEvent] {
+        guard !events.isEmpty else { return [] }
+        return try withLock {
+            let session = _currentSession
+            return try database.transaction { try events.map { try insertRow($0, session: session) } }
+        }
+    }
+
     @discardableResult
     private func insert(_ event: CaptureEvent, session: UUID) throws -> StoredCaptureEvent {
+        try database.transaction { try insertRow(event, session: session) }
+    }
+
+    /// Inserts one event; the caller holds the lock and an open transaction.
+    private func insertRow(_ event: CaptureEvent, session: UUID) throws -> StoredCaptureEvent {
         let index = EventIndex(event, recordedAt: Date())
         let payload = try encoder.encode(StoredEvent(event))
-        return try database.transaction {
-            try database.query(
-                "INSERT INTO events (session_id, kind, timestamp, host, summary, payload) VALUES (?, ?, ?, ?, ?, ?)",
-                [.text(session.uuidString), .text(index.kind), .real(index.timestamp.timeIntervalSince1970),
-                 .text(index.host), .text(index.summary), .blob(payload)]
-            )
-            let id = database.lastInsertRowID
-            try database.query(
-                "INSERT INTO events_fts (rowid, content) VALUES (?, ?)",
-                [.integer(id), .text(index.searchText)]
-            )
-            return StoredCaptureEvent(id: id, sessionID: session, kind: index.kind, host: index.host, summary: index.summary,
-                                      timestamp: index.timestamp, event: event)
-        }
+        try database.query(
+            "INSERT INTO events (session_id, kind, timestamp, host, summary, payload) VALUES (?, ?, ?, ?, ?, ?)",
+            [.text(session.uuidString), .text(index.kind), .real(index.timestamp.timeIntervalSince1970),
+             .text(index.host), .text(index.summary), .blob(payload)]
+        )
+        let id = database.lastInsertRowID
+        try database.query(
+            "INSERT INTO events_fts (rowid, content) VALUES (?, ?)",
+            [.integer(id), .text(index.searchText)]
+        )
+        return StoredCaptureEvent(id: id, sessionID: session, kind: index.kind, host: index.host, summary: index.summary,
+                                  timestamp: index.timestamp, event: event)
     }
 
     // MARK: Reading

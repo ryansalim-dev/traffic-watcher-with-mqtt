@@ -170,6 +170,26 @@ final class CaptureViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveEventsAreBatchedIntoOneTimelineUpdate() async throws {
+        let model = try makeModel()
+        let events = SampleTraffic.events()
+        for event in events { model.enqueue(event) }
+        XCTAssertTrue(model.rows.isEmpty, "queued events wait for the batch")
+
+        model.flushPendingEvents()
+        XCTAssertNil(model.lastError)
+        XCTAssertEqual(model.rows.map(\.id), model.rows.map(\.id).sorted(), "kept in arrival order")
+        XCTAssertEqual(model.rows.count, events.count)
+        XCTAssertEqual(model.pinnedHosts, ["pinned.bank.example"])
+        XCTAssertEqual(try model.store.events(in: model.store.currentSession, limit: 1000).count, events.count)
+
+        // A batch scheduled by enqueue lands on its own.
+        model.enqueue(events[0])
+        try await Task.sleep(for: CaptureViewModel.ingestInterval * 3)
+        XCTAssertEqual(model.rows.count, events.count + 1)
+    }
+
+    @MainActor
     func testSearchNarrowsVisibleRowsAndSelectionResolves() async throws {
         let model = try makeModel()
         for event in SampleTraffic.events() { model.ingest(event) }
