@@ -203,6 +203,7 @@ struct CertificateSettings: View {
     let certificates: CertificateStorage
     @State private var status: String?
     @State private var failed = false
+    @State private var installing = false
 
     var body: some View {
         Form {
@@ -226,7 +227,8 @@ struct CertificateSettings: View {
                         Text("Adds the root to the booted Simulator.").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Install") { run { try installInSimulator() } }
+                    Button(installing ? "Installing…" : "Install") { installInSimulator() }
+                        .disabled(installing)
                 }
                 HStack {
                     VStack(alignment: .leading) {
@@ -262,9 +264,18 @@ struct CertificateSettings: View {
         return try certificates.exportDER(authority)
     }
 
-    private func installInSimulator() throws -> String {
-        _ = try SimulatorTools.installRootCertificate(at: try derURL())
-        return "Installed in the booted Simulator. Restart the app you're inspecting."
+    /// `simctl` can take many seconds (or wait for a Simulator to boot), so it runs off the main thread.
+    private func installInSimulator() {
+        let url: URL
+        do { url = try derURL() } catch { return run { throw error } }
+        installing = true
+        Task {
+            let result = await Task.detached { () -> Result<String, Error> in
+                Result { try SimulatorTools.installRootCertificate(at: url) }
+            }.value
+            installing = false
+            run { _ = try result.get(); return "Installed in the booted Simulator. Restart the app you're inspecting." }
+        }
     }
 
     private func revealDER() throws -> String {

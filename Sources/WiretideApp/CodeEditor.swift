@@ -11,6 +11,8 @@ struct CodeEditor: NSViewRepresentable {
     var highlightJavaScript = false
     var fontSize: CGFloat = 13
     var isEditable = true
+    /// False keeps each line on one row and scrolls sideways, as a read-only code view does.
+    var wrapsLines = true
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -18,6 +20,7 @@ struct CodeEditor: NSViewRepresentable {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        scrollView.autohidesScrollers = true
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         textView.isRichText = false
         textView.allowsUndo = true
@@ -38,7 +41,17 @@ struct CodeEditor: NSViewRepresentable {
         paragraph.lineSpacing = fontSize * 0.35
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes[.paragraphStyle] = paragraph
+        // Lays out only what is on screen, so a large body opens without typesetting all of it.
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        if !wrapsLines {
+            scrollView.hasHorizontalScroller = true
+            textView.isHorizontallyResizable = true
+            textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
         textView.string = text
+        context.coordinator.shownText = text
         textView.delegate = context.coordinator
 
         let ruler = LineNumberRuler(textView: textView, fontSize: fontSize)
@@ -57,8 +70,10 @@ struct CodeEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? NSTextView else { return }
         textView.isEditable = isEditable
-        if textView.string != text {
+        // Compared with what was last shown rather than textView.string, which copies the whole text.
+        if context.coordinator.shownText != text {
             textView.string = text
+            context.coordinator.shownText = text
             context.coordinator.highlight()
         } else if context.coordinator.highlightedAsJSON != highlightJSON || context.coordinator.highlightedAsJavaScript != highlightJavaScript {
             context.coordinator.highlight()
@@ -71,6 +86,8 @@ struct CodeEditor: NSViewRepresentable {
         weak var textView: NSTextView?
         var highlightedAsJSON = false
         var highlightedAsJavaScript = false
+        /// The text last put into the view or typed into it.
+        var shownText = ""
         private var observer: NSObjectProtocol?
 
         init(_ parent: CodeEditor) {
@@ -90,7 +107,8 @@ struct CodeEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }
-            parent.text = textView.string
+            shownText = textView.string
+            parent.text = shownText
             highlight()
             textView.enclosingScrollView?.verticalRulerView?.needsDisplay = true
         }

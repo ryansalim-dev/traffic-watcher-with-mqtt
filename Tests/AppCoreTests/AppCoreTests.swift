@@ -170,6 +170,26 @@ final class CaptureViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveEventsAreBatchedIntoOneTimelineUpdate() async throws {
+        let model = try makeModel()
+        let events = SampleTraffic.events()
+        for event in events { model.enqueue(event) }
+        XCTAssertTrue(model.rows.isEmpty, "queued events wait for the batch")
+
+        model.flushPendingEvents()
+        XCTAssertNil(model.lastError)
+        XCTAssertEqual(model.rows.map(\.id), model.rows.map(\.id).sorted(), "kept in arrival order")
+        XCTAssertEqual(model.rows.count, events.count)
+        XCTAssertEqual(model.pinnedHosts, ["pinned.bank.example"])
+        XCTAssertEqual(try model.store.events(in: model.store.currentSession, limit: 1000).count, events.count)
+
+        // A batch scheduled by enqueue lands on its own.
+        model.enqueue(events[0])
+        try await Task.sleep(for: CaptureViewModel.ingestInterval * 3)
+        XCTAssertEqual(model.rows.count, events.count + 1)
+    }
+
+    @MainActor
     func testSearchNarrowsVisibleRowsAndSelectionResolves() async throws {
         let model = try makeModel()
         for event in SampleTraffic.events() { model.ingest(event) }
@@ -747,6 +767,14 @@ final class SystemProxyTests: XCTestCase {
         XCTAssertNotNil(model.lastError)
         await model.stopCapture()
         XCTAssertEqual(proxy.calls.count, 1) // nothing to disable
+    }
+
+    func testSystemProxyFailureReadsAsPlainSentences() {
+        let started = CaptureViewModel.systemProxyFailure(port: 9090, reason: "its helper isn't installed or isn't responding.")
+        XCTAssertEqual(started, "Capturing on port 9090, but Wiretide couldn't turn on the system proxy (its helper isn't installed or isn't responding). "
+            + "To capture anyway, set the HTTP and HTTPS proxies to 127.0.0.1, port 9090, in System Settings › Network › Wi-Fi › Details › Proxies.")
+        XCTAssertFalse(started.contains("Error("))
+        XCTAssertTrue(CaptureViewModel.systemProxyFailure(port: nil, reason: "x").contains("switch the system proxy back off (x)"))
     }
 
     func testOldSavedConfigurationStillDecodes() throws {

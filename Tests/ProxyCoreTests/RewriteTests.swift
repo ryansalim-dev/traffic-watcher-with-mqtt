@@ -50,6 +50,14 @@ final class HTTPRewriterTests: XCTestCase {
         XCTAssertEqual(outcome.request.headers.first { $0.name == "Host" }?.value, "api.example.com", "Host kept")
     }
 
+    func testMapLocalEditableHeadersAreStableBetweenReads() {
+        let response = MapLocalResponse(headers: [CapturedHeader(name: "Content-Type", value: "application/json"),
+                                                  CapturedHeader(name: "X-A", value: "1")])
+        XCTAssertNil(response.headerRows)
+        XCTAssertEqual(response.editableHeaders, response.editableHeaders)
+        XCTAssertEqual(Set(response.editableHeaders.map(\.id)).count, 2)
+    }
+
     func testMapLocalAnswersWithInlineBodyOrFile() {
         let inline = HTTPRule(name: "Mock", pattern: "*/v2/devices*", method: "GET", kind: .mapLocal,
                               mapLocal: MapLocalResponse(statusCode: 418, body: #"{"mock":true}"#))

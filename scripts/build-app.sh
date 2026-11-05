@@ -16,6 +16,8 @@
 #   NOTARY_KEYCHAIN_PROFILE, or APPLE_ID + APPLE_TEAM_ID + APPLE_APP_PASSWORD
 #                      notarize and staple when set (requires a Developer ID SIGN_IDENTITY)
 #   OUTPUT             output folder                          (default: dist)
+#   TESTER_PRO         1 builds a Pro tester app: Pro unlocked without a license, named
+#                      Wiretide-ProTester-<version>.zip. Ad hoc signing only, so it can't ship.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -29,9 +31,18 @@ ARCHS=${ARCHS:-arm64 x86_64}
 RELEASE_DATE=${RELEASE_DATE:-$(date -u +%Y-%m-%d)}
 SIGN_IDENTITY=${SIGN_IDENTITY:--}
 OUTPUT=${OUTPUT:-dist}
+TESTER_PRO=${TESTER_PRO:-0}
 
 APP="$OUTPUT/Wiretide.app"
 ZIP="$OUTPUT/Wiretide-$VERSION.zip"
+SWIFT_FLAGS=()
+if [[ "$TESTER_PRO" == 1 ]]; then
+  # Never sign, notarize or publish a build that unlocks Pro for everyone.
+  [[ "$SIGN_IDENTITY" == "-" ]] || { echo "TESTER_PRO builds are ad hoc signed only" >&2; exit 1; }
+  [[ -z "${NOTARY_KEYCHAIN_PROFILE:-}${APPLE_ID:-}${SU_FEED_URL:-}" ]] || { echo "TESTER_PRO builds can't be notarized or offered as updates" >&2; exit 1; }
+  SWIFT_FLAGS=(-Xswiftc -DWIRETIDE_TESTER_PRO)
+  ZIP="$OUTPUT/Wiretide-ProTester-$VERSION.zip"
+fi
 
 echo "==> Building Wiretide $VERSION ($BUILD_NUMBER) for $ARCHS"
 # One native build per architecture, joined with lipo. (`swift build --arch a --arch b` switches to
@@ -40,7 +51,7 @@ BINARIES=()
 HELPERS=()
 for arch in $ARCHS; do
   triple="$arch-apple-macosx14.0"
-  swift build -c release --product Wiretide --triple "$triple"
+  swift build -c release --product Wiretide --triple "$triple" ${SWIFT_FLAGS[@]+"${SWIFT_FLAGS[@]}"}
   swift build -c release --product WiretideHelper --triple "$triple"
   BIN=$(swift build -c release --triple "$triple" --show-bin-path)
   BINARIES+=("$BIN/Wiretide")

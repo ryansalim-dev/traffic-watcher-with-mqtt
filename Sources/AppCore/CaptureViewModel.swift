@@ -190,6 +190,11 @@ public final class CaptureViewModel {
     private let saveConfiguration: ((EngineConfiguration) -> Void)?
     private let systemProxy: SystemProxyControlling?
     private var consumer: Task<Void, Never>?
+    /// Live events waiting for the next timeline update (see `enqueue`).
+    private var pendingEvents: [CaptureEvent] = []
+    private var flushScheduled = false
+    /// How long live events gather before they are saved and shown together.
+    static let ingestInterval: Duration = .milliseconds(150)
 
     /// - Parameters:
     ///   - engine: nil for previews and tests that feed events through `ingest`.
@@ -220,7 +225,7 @@ public final class CaptureViewModel {
         if let engine {
             consumer = Task { [weak self] in
                 for await event in engine.events {
-                    self?.ingest(event)
+                    self?.enqueue(event)
                 }
             }
         }
@@ -354,15 +359,25 @@ public final class CaptureViewModel {
                 systemProxyActive = false
             }
         } catch {
-            lastError = port == nil
-                ? "Couldn't switch the system proxy back: \(error). Check System Settings › Network › Proxies."
-                : "Capture started, but the system proxy couldn't be set: \(error)"
+            lastError = Self.systemProxyFailure(port: port, reason: error.localizedDescription)
         }
+    }
+
+    /// Plain sentences for a system proxy that couldn't be switched; `port` is nil when switching it off.
+    nonisolated static func systemProxyFailure(port: Int?, reason: String) -> String {
+        var reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reason.hasSuffix(".") { reason.removeLast() }
+        guard let port else {
+            return "Wiretide couldn't switch the system proxy back off (\(reason)). Turn off the web proxies in System Settings › Network › Wi-Fi › Details › Proxies."
+        }
+        return "Capturing on port \(port), but Wiretide couldn't turn on the system proxy (\(reason)). "
+            + "To capture anyway, set the HTTP and HTTPS proxies to 127.0.0.1, port \(port), in System Settings › Network › Wi-Fi › Details › Proxies."
     }
 
     /// Starts a fresh session and clears the timeline. Earlier sessions stay in the store.
     public func newSession(named name: String = "Session") {
         returnToLive()
+        flushPendingEvents()
         do {
             let previous = store.currentSession
             try store.startSession(named: name)
@@ -403,6 +418,7 @@ public final class CaptureViewModel {
     /// Shows a saved session in the timeline. Live capture keeps recording in the background.
     public func openSession(_ id: UUID) {
         guard id != store.currentSession else { return returnToLive() }
+        flushPendingEvents()
         do {
             let events = try store.allEvents(in: id)
             if viewedSession == nil {
@@ -426,6 +442,7 @@ public final class CaptureViewModel {
     /// Goes back to the live timeline.
     public func returnToLive() {
         guard viewedSession != nil else { return }
+        flushPendingEvents()
         viewedSession = nil
         rows = liveRows
         topicTree = liveTopicTree
@@ -546,24 +563,50 @@ public final class CaptureViewModel {
 
     // MARK: Events
 
-    /// Stores an event and adds it to the timeline.
+    /// Stores an event and adds it to the timeline right away (tests, previews, screenshots).
     public func ingest(_ event: CaptureEvent) {
+        ingest([event])
+    }
+
+    /// Queues a live event. Busy traffic arrives hundreds of times a second; saving and redrawing
+    /// the timeline for each one kept the main thread busy enough to beachball, so events gather
+    /// for `ingestInterval` and are saved in one transaction and added in one timeline update.
+    func enqueue(_ event: CaptureEvent) {
+        pendingEvents.append(event)
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.ingestInterval)
+            self?.flushPendingEvents()
+        }
+    }
+
+    /// Saves and shows the queued live events now.
+    public func flushPendingEvents() {
+        flushScheduled = false
+        let events = pendingEvents
+        pendingEvents = []
+        ingest(events)
+    }
+
+    /// Stores events and adds them to the timeline in one update.
+    public func ingest(_ events: [CaptureEvent]) {
+        guard !events.isEmpty else { return }
         do {
-            let stored = try store.append(event)
-            let row = TrafficRow(stored)
-            if viewedSession == nil {
-                rows.append(row)
-                if case .mqtt(let m) = event { topicTree.record(m.event, at: m.timestamp) }
-            } else {
-                // A saved session is on screen; live capture carries on behind it.
-                liveRows.append(row)
-                if case .mqtt(let m) = event { liveTopicTree.record(m.event, at: m.timestamp) }
+            let newRows = try store.append(contentsOf: events).map(TrafficRow.init)
+            let showingLive = viewedSession == nil
+            if showingLive { rows.append(contentsOf: newRows) } else { liveRows.append(contentsOf: newRows) }
+            for event in events {
+                if case .mqtt(let m) = event {
+                    // A saved session is on screen; live capture carries on behind it.
+                    if showingLive { topicTree.record(m.event, at: m.timestamp) } else { liveTopicTree.record(m.event, at: m.timestamp) }
+                }
+                if case .tlsInterceptionFailed(let host, _, _) = event,
+                   !pinnedHosts.contains(host), !configuration.bypassHosts.contains(host) {
+                    pinnedHosts.append(host)
+                }
             }
-            if case .tlsInterceptionFailed(let host, _, _) = event,
-               !pinnedHosts.contains(host), !configuration.bypassHosts.contains(host) {
-                pinnedHosts.append(host)
-            }
-            if !searchText.isEmpty, viewedSession == nil { runSearch() }
+            if !searchText.isEmpty, showingLive { runSearch() }
         } catch {
             lastError = "Could not save event: \(error)"
         }
