@@ -113,8 +113,10 @@ final class HelperConnection: SystemProxyControlling, @unchecked Sendable {
             let once = Once()
             let proxy = connection.remoteObjectProxyWithErrorHandler { error in
                 once.run {
+                    // The XPC error ("Couldn't communicate with a helper application") says nothing more.
+                    _ = error
                     continuation.resume(throwing: HelperError(message:
-                        "The helper isn't available. Install it in Settings › Proxy. (\(error.localizedDescription))"))
+                        "its helper isn't installed or isn't responding; install it in Settings › Proxy"))
                 }
             }
             guard let helper = proxy as? WiretideHelperProtocol else {

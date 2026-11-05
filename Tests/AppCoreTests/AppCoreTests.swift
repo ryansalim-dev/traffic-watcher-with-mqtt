@@ -769,6 +769,14 @@ final class SystemProxyTests: XCTestCase {
         XCTAssertEqual(proxy.calls.count, 1) // nothing to disable
     }
 
+    func testSystemProxyFailureReadsAsPlainSentences() {
+        let started = CaptureViewModel.systemProxyFailure(port: 9090, reason: "its helper isn't installed or isn't responding.")
+        XCTAssertEqual(started, "Capturing on port 9090, but Wiretide couldn't turn on the system proxy (its helper isn't installed or isn't responding). "
+            + "To capture anyway, set the HTTP and HTTPS proxies to 127.0.0.1, port 9090, in System Settings › Network › Wi-Fi › Details › Proxies.")
+        XCTAssertFalse(started.contains("Error("))
+        XCTAssertTrue(CaptureViewModel.systemProxyFailure(port: nil, reason: "x").contains("switch the system proxy back off (x)"))
+    }
+
     func testOldSavedConfigurationStillDecodes() throws {
         let saved = #"{"proxyPort":8888,"allowRemoteDevices":true,"decryptHTTPS":false,"bypassHosts":["a.example"],"forwarders":[]}"#
         let configuration = try JSONDecoder().decode(EngineConfiguration.self, from: Data(saved.utf8))

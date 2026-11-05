@@ -359,10 +359,19 @@ public final class CaptureViewModel {
                 systemProxyActive = false
             }
         } catch {
-            lastError = port == nil
-                ? "Couldn't switch the system proxy back: \(error). Check System Settings › Network › Proxies."
-                : "Capture started, but the system proxy couldn't be set: \(error)"
+            lastError = Self.systemProxyFailure(port: port, reason: error.localizedDescription)
         }
+    }
+
+    /// Plain sentences for a system proxy that couldn't be switched; `port` is nil when switching it off.
+    nonisolated static func systemProxyFailure(port: Int?, reason: String) -> String {
+        var reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reason.hasSuffix(".") { reason.removeLast() }
+        guard let port else {
+            return "Wiretide couldn't switch the system proxy back off (\(reason)). Turn off the web proxies in System Settings › Network › Wi-Fi › Details › Proxies."
+        }
+        return "Capturing on port \(port), but Wiretide couldn't turn on the system proxy (\(reason)). "
+            + "To capture anyway, set the HTTP and HTTPS proxies to 127.0.0.1, port \(port), in System Settings › Network › Wi-Fi › Details › Proxies."
     }
 
     /// Starts a fresh session and clears the timeline. Earlier sessions stay in the store.
