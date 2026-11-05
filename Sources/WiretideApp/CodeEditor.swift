@@ -20,6 +20,7 @@ struct CodeEditor: NSViewRepresentable {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        scrollView.autohidesScrollers = true
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         textView.isRichText = false
         textView.allowsUndo = true
