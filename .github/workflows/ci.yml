@@ -11,6 +11,11 @@ on:
   pull_request:
     paths-ignore: ['site/**', '.github/workflows/site.yml', 'scripts/deploy-site.sh']
   workflow_dispatch:
+    inputs:
+      tester_pro:
+        description: Also build a Pro tester app (Pro unlocked, ad hoc signed, never released)
+        type: boolean
+        default: false
 
 jobs:
   macos:
@@ -49,6 +54,16 @@ jobs:
           name: screenshots
           path: screenshots
           if-no-files-found: warn
+          retention-days: 14
+      - name: Build the Pro tester app
+        if: github.event_name == 'workflow_dispatch' && inputs.tester_pro
+        run: TESTER_PRO=1 OUTPUT=dist-tester scripts/build-app.sh
+      - name: Upload the Pro tester app
+        if: github.event_name == 'workflow_dispatch' && inputs.tester_pro
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wiretide-ProTester-app
+          path: dist-tester/*.zip
           retention-days: 14
       - name: Upload the app icon
         uses: actions/upload-artifact@v4

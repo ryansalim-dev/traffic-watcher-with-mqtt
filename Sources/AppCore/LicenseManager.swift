@@ -111,7 +111,7 @@ public final class LicenseManager {
     /// license: a customer whose license lapsed, is offline past the grace period, or whose license
     /// couldn't be read is never asked to give up what they captured.
     public var savedSessionLimit: Int? {
-        guard license == nil, !loadFailed else { return nil }
+        guard !Self.isTesterBuild, license == nil, !loadFailed else { return nil }
         return policy.freeSavedSessions
     }
 
@@ -233,13 +233,29 @@ public final class LicenseManager {
         return calendar.startOfDay(for: published) <= coveredUntil
     }
 
+    /// True in Pro tester builds: `TESTER_PRO=1 scripts/build-app.sh` compiles with
+    /// `-D WIRETIDE_TESTER_PRO`, which unlocks Pro without a license. Only the manual CI run makes
+    /// them; build-app.sh refuses the flag with a Developer ID identity, so releases never carry it.
+    public nonisolated static var isTesterBuild: Bool {
+        #if WIRETIDE_TESTER_PRO
+        true
+        #else
+        false
+        #endif
+    }
+
     public func recompute() {
+        if Self.isTesterBuild {
+            entitlement = .pro(coveredUntil: .distantFuture)
+            return
+        }
         entitlement = Entitlement.evaluate(license, now: now(), releaseDate: configuration.releaseDate, policy: policy)
     }
 
     /// One line for the status bar and the License tab.
     public var summary: String {
-        switch entitlement {
+        if Self.isTesterBuild { return "Pro · tester build" }
+        return switch entitlement {
         case .pro(let until):
             "Pro · updates until \(until.formatted(date: .abbreviated, time: .omitted))"
         case .free(.noLicense):

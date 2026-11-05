@@ -826,6 +826,7 @@ struct SidebarFooter: View {
     }
 
     private var licenseLine: String {
+        if LicenseManager.isTesterBuild { return "Tester build" }
         if case .pro(let coveredUntil) = license.entitlement {
             return "Updates until \(coveredUntil.formatted(.dateTime.month(.abbreviated).year()))"
         }
