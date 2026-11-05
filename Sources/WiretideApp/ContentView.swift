@@ -40,8 +40,9 @@ struct ContentView: View {
 
     /// What fits in the content column's part of the toolbar, so the capsule and the field never overlap the buttons.
     private var toolbarFit: ToolbarFit {
-        let inspectorButton = !showInspector && !showsSetup
-        return .fitting(width: detailWidth, buttons: 5 + (inspectorButton ? 1 : 0), showsModeSwitch: model.section == .mqtt)
+        // A closed inspector leaves its own toggle here, and its copy and toggle buttons can stay at the trailing end.
+        let closedInspector = !showInspector && !showsSetup
+        return .fitting(width: detailWidth, buttons: 5 + (closedInspector ? 3 : 0), showsModeSwitch: model.section == .mqtt)
     }
 
     private var showsTopics: Bool { model.section == .mqtt && mqttMode == .topics }
@@ -107,7 +108,7 @@ struct ContentView: View {
                 if model.section == .mqtt {
                     ToolbarItem(placement: .principal) {
                         PillSegments(options: MQTTMode.allCases.map { ($0, $0.rawValue) }, selection: $mqttMode)
-                            .frame(width: 150)
+                            .frame(width: toolbarFit.compactModeSwitch ? ToolbarFit.compactModeSwitchWidth : ToolbarFit.modeSwitchWidth)
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -339,9 +340,11 @@ struct RecordingCapsule: View {
                                     Text("Recording").fontWeight(.semibold)
                                 }
                             }
-                            Text(Self.elapsed(from: started, to: context.date))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                            if fit.showsTimer {
+                                Text(Self.elapsed(from: started, to: context.date))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
                             if fit.showsSparkline {
                                 Sparkline(values: model.activity(now: context.date))
                                     .frame(width: 56, height: 16)
@@ -354,7 +357,11 @@ struct RecordingCapsule: View {
                         }
                     }
                 } else {
-                    Text(fit.showsRecordingLabel ? "Start Recording" : "Record").fontWeight(.semibold)
+                    if fit.showsRecordingLabel {
+                        Text("Start Recording").fontWeight(.semibold)
+                    } else if fit.showsTimer {
+                        Text("Record").fontWeight(.semibold)
+                    }
                 }
             }
             .font(.system(size: 12.5))
@@ -563,13 +570,15 @@ struct ToolbarSearchField: View {
                 .focused($focused)
                 .onSubmit { focused = true }
                 .onExitCommand { text = ""; focused = false }
-            if text.isEmpty && width >= 180 {
-                Text("⌘F")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 5)
-                    .frame(height: 17)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.hairline))
+            if text.isEmpty {
+                if width >= 180 {
+                    Text("⌘F")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 5)
+                        .frame(height: 17)
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.hairline))
+                }
             } else {
                 Button {
                     text = ""

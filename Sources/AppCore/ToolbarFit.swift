@@ -4,33 +4,43 @@ import Foundation
 ///
 /// The recording capsule and the filter field share what's left after the fixed buttons. Parts are dropped
 /// in a set order as the column narrows: first the field shrinks to its minimum, then the sparkline goes,
-/// then the "Recording" label, then the event count, and last the field folds into a search button.
+/// then the "Recording" label, then the event count, then the field folds into a search button, and last
+/// the timer goes and the Packets/Topics switch narrows.
 public struct ToolbarFit: Equatable, Sendable {
+    public var showsTimer = true
     public var showsRecordingLabel = true
     public var showsSparkline = true
     public var showsCount = true
     /// nil folds the field into a button that opens it in a popover.
     public var searchWidth: Double? = ToolbarFit.searchWidest
+    /// A narrower Packets/Topics switch, for the narrowest MQTT column.
+    public var compactModeSwitch = false
 
     public static let searchWidest: Double = 220
     public static let searchNarrowest: Double = 150
+    public static let modeSwitchWidth: Double = 150
+    public static let compactModeSwitchWidth: Double = 120
 
-    // Rough widths in points, measured from the app at its 12.5 pt toolbar font.
-    static let button: Double = 38
-    /// Space between toolbar items and at the toolbar's ends, plus a little slack so items never touch.
+    // Widths in points, measured from the app's screenshots at its 12.5 pt toolbar font, rounded up.
+    static let button: Double = 34
+    /// Space between toolbar items and at the toolbar's ends, plus slack so items never touch.
     static let spacing: Double = 48
-    static let modeSwitch: Double = 166
-    static let capsuleBase: Double = 84        // stop button and timer
+    static let modeSwitch: Double = modeSwitchWidth + 16
+    static let searchButton: Double = 34
+    static let capsuleBase: Double = 36       // the stop button
+    static let timer: Double = 48
     static let recordingLabel: Double = 83
     static let sparkline: Double = 65
     static let count: Double = 84
 
-    public init(showsRecordingLabel: Bool = true, showsSparkline: Bool = true, showsCount: Bool = true,
-                searchWidth: Double? = ToolbarFit.searchWidest) {
+    public init(showsTimer: Bool = true, showsRecordingLabel: Bool = true, showsSparkline: Bool = true, showsCount: Bool = true,
+                searchWidth: Double? = ToolbarFit.searchWidest, compactModeSwitch: Bool = false) {
+        self.showsTimer = showsTimer
         self.showsRecordingLabel = showsRecordingLabel
         self.showsSparkline = showsSparkline
         self.showsCount = showsCount
         self.searchWidth = searchWidth
+        self.compactModeSwitch = compactModeSwitch
     }
 
     /// - Parameters:
@@ -39,11 +49,21 @@ public struct ToolbarFit: Equatable, Sendable {
     ///   - showsModeSwitch: whether the Packets/Topics switch sits in the middle.
     public static func fitting(width: Double, buttons: Int, showsModeSwitch: Bool) -> ToolbarFit {
         var room = width - Double(buttons) * button - spacing - (showsModeSwitch ? modeSwitch : 0) - capsuleBase
-        var fit = ToolbarFit(showsRecordingLabel: false, showsSparkline: false, showsCount: false, searchWidth: nil)
+        var fit = ToolbarFit(showsTimer: false, showsRecordingLabel: false, showsSparkline: false, showsCount: false,
+                             searchWidth: nil)
+        // Too narrow even for the timer and a search button: the switch gives up some width first.
+        if showsModeSwitch && room < searchButton + timer {
+            fit.compactModeSwitch = true
+            room += modeSwitchWidth - compactModeSwitchWidth
+        }
+        room -= searchButton
         // Each part is added only while everything before it fits, so nothing comes back as the column narrows.
-        guard room >= searchNarrowest else { return fit }
+        guard room >= timer else { return fit }
+        fit.showsTimer = true
+        room -= timer
+        guard room + searchButton >= searchNarrowest else { return fit }
+        room += searchButton - searchNarrowest
         fit.searchWidth = searchNarrowest
-        room -= searchNarrowest
         guard room >= count else { return fit }
         fit.showsCount = true
         room -= count
