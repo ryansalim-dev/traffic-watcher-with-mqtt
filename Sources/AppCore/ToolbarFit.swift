@@ -22,7 +22,7 @@ public struct ToolbarFit: Equatable, Sendable {
     public static let compactModeSwitchWidth: Double = 120
 
     // Widths in points, measured from the app's screenshots at its 12.5 pt toolbar font, rounded up.
-    static let button: Double = 34
+    static let button: Double = 36   // badged buttons (rule and script counts) run a little wider
     /// Space between toolbar items and at the toolbar's ends, plus slack so items never touch.
     static let spacing: Double = 48
     static let modeSwitch: Double = modeSwitchWidth + 16
@@ -32,7 +32,7 @@ public struct ToolbarFit: Equatable, Sendable {
     static let recordingLabel: Double = 83
     static let sparkline: Double = 65
     static let count: Double = 84
-    static let fullSlack: Double = 48
+    static let fullSlack: Double = 80
 
     public init(showsTimer: Bool = true, showsRecordingLabel: Bool = true, showsSparkline: Bool = true, showsCount: Bool = true,
                 searchWidth: Double? = ToolbarFit.searchWidest, compactModeSwitch: Bool = false) {
