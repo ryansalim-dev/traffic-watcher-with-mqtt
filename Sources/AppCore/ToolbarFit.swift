@@ -32,6 +32,7 @@ public struct ToolbarFit: Equatable, Sendable {
     static let recordingLabel: Double = 83
     static let sparkline: Double = 65
     static let count: Double = 84
+    static let fullSlack: Double = 48
 
     public init(showsTimer: Bool = true, showsRecordingLabel: Bool = true, showsSparkline: Bool = true, showsCount: Bool = true,
                 searchWidth: Double? = ToolbarFit.searchWidest, compactModeSwitch: Bool = false) {
@@ -73,7 +74,8 @@ public struct ToolbarFit: Equatable, Sendable {
         guard room >= sparkline else { return fit }
         fit.showsSparkline = true
         room -= sparkline
-        fit.searchWidth = min(searchWidest, searchNarrowest + room)
+        // Every part showing means more gaps between items than `spacing` covers, so some room stays unused.
+        fit.searchWidth = min(searchWidest, searchNarrowest + max(0, room - fullSlack))
         return fit
     }
 }
