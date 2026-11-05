@@ -41,7 +41,7 @@ struct WiretideApp: App {
                     .onChange(of: license.entitlement) { updates.follow(license) }
             case .failed(let message):
                 ContentUnavailableView("Wiretide could not start", systemImage: "xmark.octagon", description: Text(message))
-                    .frame(minWidth: 500, minHeight: 300)
+                    .frame(minWidth: 500, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
             }
         }
         // The toolbar carries the recording control and the filter field; the window title would only crowd it.

@@ -41,6 +41,7 @@ struct InspectorView: View {
         } else {
             ContentUnavailableView("Nothing selected", systemImage: "sidebar.right",
                                    description: Text("Select a request, packet or message to inspect it."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -341,6 +342,7 @@ struct PinnedHostInspector: View {
                     .buttonStyle(.borderedProminent)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -351,6 +353,7 @@ struct NoticeView: View {
 
     var body: some View {
         ContentUnavailableView(title, systemImage: symbol, description: Text(message))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 #endif

@@ -17,8 +17,10 @@ struct TopicTreeView: View {
         if tree.roots.isEmpty {
             ContentUnavailableView("No topics yet", systemImage: "point.3.connected.trianglepath.dotted",
                                    description: Text("Topics appear here as PUBLISH packets are captured."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if roots.isEmpty {
             ContentUnavailableView.search(text: filter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             TimelineView(.periodic(from: .now, by: 5)) { context in
                 List(selection: $selection) {
@@ -228,6 +230,7 @@ struct TopicDetailView: View {
         } else {
             ContentUnavailableView("No topic selected", systemImage: "point.3.connected.trianglepath.dotted",
                                    description: Text("Select a topic to see its latest payload and history."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
