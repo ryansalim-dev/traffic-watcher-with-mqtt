@@ -292,9 +292,9 @@ details p { color: var(--muted); margin: 12px 0 0; }
 .legal { padding: 64px 0 88px; }
 .legal h1 { font-size: clamp(2rem, 4.5vw, 2.8rem); }
 .legal .updated { color: var(--muted); margin: 12px 0 0; font-size: 0.95rem; }
-.legal .summary { margin: 32px 0 0; padding: 18px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.legal .summary p { margin: 0; }
+.legal .updated + p { margin-top: 32px; }
 .legal h2 { font-size: 1.3rem; max-width: none; margin: 40px 0 0; }
+.legal h3 { font-size: 1.05rem; margin: 28px 0 0; }
 .legal p, .legal ul { margin: 12px 0 0; }
 .legal ul { padding-left: 1.3em; }
 .legal li + li { margin-top: 6px; }

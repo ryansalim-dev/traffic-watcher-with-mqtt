@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy · Wiretide</title>
-  <meta name="description" content="How Wiretide handles your data: captured traffic stays on your Mac, with no analytics or tracking.">
+  <meta name="description" content="What Wiretide collects and what it never collects: captured traffic stays on your Mac.">
   <link rel="canonical" href="https://wiretide.app/privacy/">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#111417" media="(prefers-color-scheme: dark)">
@@ -31,42 +31,70 @@
   <main class="legal">
     <div class="wrap narrow">
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated November 4, 2026</p>
-      <div class="summary">
-        <p><strong>The short version:</strong> the traffic you capture never leaves your Mac. Wiretide has no analytics, no tracking and no ads. It only goes online to look for updates and to check your Pro license.</p>
-      </div>
+      <p class="updated">Last updated November 5, 2026</p>
+      <p>Wiretide ("us", "we", or "our") makes the Wiretide app for macOS and runs the wiretide.app website (the "Service"). This page explains what data we collect when you use the Service, what we do with it, and what we never collect.</p>
+      <p>Wiretide is built so that your traffic stays on your Mac. What it captures on your machine stays on your machine.</p>
 
-      <h2>Who we are</h2>
-      <p>Wiretide ("we", "us") makes the Wiretide app and this website. If you have a question about your data, email <a href="mailto:hello@wiretide.app">hello@wiretide.app</a>.</p>
+      <h2>1. Data Collection &amp; Usage</h2>
 
-      <h2>The traffic you capture</h2>
-      <p>Everything Wiretide captures, including requests, responses, MQTT messages, saved sessions, rules and scripts, is stored only on your Mac. We never receive it, and nothing in the app uploads it. The root certificate Wiretide creates to inspect HTTPS is generated on your Mac and its private key stays there.</p>
-
-      <h2>What the app sends over the internet</h2>
+      <h3>1.1 The Wiretide app for macOS</h3>
+      <p><strong>Data we DO NOT collect</strong></p>
       <ul>
-        <li><strong>Update checks.</strong> About once a day, Wiretide downloads a small list of available versions from wiretide.app. Like any web request, this includes your IP address and the app and macOS version.</li>
-        <li><strong>Pro license checks.</strong> When you activate Pro, Wiretide sends your license key and your Mac's name to Lemon Squeezy, our reseller, so the activation shows up in your account and you can manage it there. Every few days it re-checks the key with Lemon Squeezy. A license keeps working offline for up to 30 days between checks.</li>
-        <li><strong>Downloads.</strong> New versions are downloaded from GitHub, which receives your IP address as part of the download.</li>
+        <li>The HTTP, HTTPS, WebSocket and MQTT traffic you capture, including URLs, headers, bodies, topics and payloads.</li>
+        <li>Saved sessions, exported files, rules (breakpoints, Map Local, Rewrite) and scripts.</li>
+        <li>The root certificate Wiretide creates to inspect HTTPS. It is generated on your Mac and its private key never leaves it.</li>
+        <li>Usage analytics, crash reports or advertising identifiers. The app contains no analytics or crash-reporting SDK.</li>
       </ul>
-      <p>The free version sends nothing except update checks. Wiretide has no crash reporting, usage statistics or advertising identifiers.</p>
+      <p>All of this is stored only on your Mac. We cannot see it and nothing in the app uploads it.</p>
 
-      <h2>Purchases</h2>
-      <p>Wiretide Pro is sold through Lemon Squeezy, which acts as the merchant of record. Lemon Squeezy collects your name, email, billing address and payment details to process your order, issue receipts and handle taxes. We receive your name, email, country and order details so we can send your license and help with support. We never see your full card details. See the <a href="https://www.lemonsqueezy.com/privacy">Lemon Squeezy privacy policy</a> for how they handle your data.</p>
+      <p><strong>Data we collect</strong></p>
+      <ul>
+        <li><strong>Update checks.</strong> About once a day, the app downloads a list of available versions from wiretide.app. The request carries your IP address and the app and macOS version, as any web request does. We use it only to offer updates.</li>
+        <li><strong>License activation (Pro).</strong> When you activate Pro, the app sends your license key and your Mac's name to Lemon Squeezy, which issues and manages licenses for us. The Mac's name lets you recognize and deactivate that Mac from your Lemon Squeezy account.</li>
+        <li><strong>License checks (Pro).</strong> Every few days the app re-checks your license key with Lemon Squeezy. If it can't, Pro keeps working offline for up to 30 days.</li>
+      </ul>
+      <p>The free version sends nothing except update checks.</p>
 
-      <h2>This website</h2>
-      <p>wiretide.app uses no cookies and no analytics. It is hosted on Cloudflare, which processes basic request data such as IP addresses to deliver the site and protect it from abuse. If you join the release mailing list, your email is stored with our newsletter provider and used only to tell you about Wiretide releases. Every email has an unsubscribe link.</p>
+      <h3>1.2 The wiretide.app website</h3>
+      <p><strong>Data we DO NOT collect</strong></p>
+      <ul>
+        <li>The website sets no cookies and runs no analytics or tracking scripts.</li>
+      </ul>
+      <p><strong>Data we collect</strong></p>
+      <ul>
+        <li><strong>Mailing list.</strong> If you sign up to hear about releases, we store your email address with our newsletter provider and use it only to email you about Wiretide. Every email has an unsubscribe link.</li>
+        <li><strong>Support email.</strong> If you email us, we keep the conversation so we can help you. We don't use it for marketing or share it.</li>
+      </ul>
 
-      <h2>Emails you send us</h2>
-      <p>When you email us, we keep the conversation so we can help you. We don't share it or use it for marketing.</p>
+      <h3>1.3 Purchases</h3>
+      <p>When you buy Wiretide Pro, Lemon Squeezy acts as our reseller and merchant of record. It collects your name, email, billing address and payment details to process the order, issue receipts and handle sales tax. We receive your name, email, country and order details so we can deliver your license and provide support. We never see or store your full card details.</p>
 
-      <h2>How long we keep data</h2>
-      <p>We keep order and license records for as long as your license exists and as required for tax and accounting. Support emails are kept for as long as they are useful for helping you. Mailing list addresses are deleted when you unsubscribe.</p>
+      <h2>2. Service Providers</h2>
+      <p>We use a small number of third-party services to run Wiretide. Each one has its own privacy policy.</p>
 
-      <h2>Your rights</h2>
-      <p>You can ask us to show, correct or delete the personal data we hold about you, or to stop using it, by emailing <a href="mailto:hello@wiretide.app">hello@wiretide.app</a>. Data held by Lemon Squeezy about your purchase can also be managed through them. Depending on where you live, you may also have the right to complain to your local data protection authority.</p>
+      <h3>2.1 Payments &amp; Licensing</h3>
+      <p><strong>Lemon Squeezy</strong> processes payments, issues license keys and validates them. <a href="https://www.lemonsqueezy.com/privacy">Lemon Squeezy Privacy Policy</a></p>
 
-      <h2>Changes</h2>
-      <p>If we change this policy, we'll update the date at the top of this page. If a change is significant, we'll say so in the release notes.</p>
+      <h3>2.2 Hosting, Content Delivery &amp; Security</h3>
+      <p><strong>Cloudflare</strong> hosts wiretide.app and the update feed, and protects them from abuse. It processes request data such as IP addresses. <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a></p>
+
+      <h3>2.3 Downloads</h3>
+      <p><strong>GitHub</strong> hosts the app downloads and release notes, and receives your IP address when you download Wiretide. <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a></p>
+
+      <h3>2.4 Email</h3>
+      <p>Our newsletter provider stores mailing list addresses, and our email provider handles messages sent to our support address.</p>
+
+      <h2>3. Data Retention &amp; Your Rights</h2>
+      <p>We keep order and license records for as long as your license exists and as long as tax and accounting rules require. Mailing list addresses are deleted when you unsubscribe. You can ask us at any time to show, correct or delete the personal data we hold about you by emailing <a href="mailto:hello@wiretide.app">hello@wiretide.app</a>.</p>
+
+      <h2>4. Links To Other Sites</h2>
+      <p>The Service links to sites we don't operate, such as GitHub and Lemon Squeezy. We aren't responsible for their content or privacy practices, so please review their policies.</p>
+
+      <h2>5. Changes To This Privacy Policy</h2>
+      <p>We may update this policy from time to time. When we do, we change the "Last updated" date at the top of this page. Significant changes will also be mentioned in the release notes.</p>
+
+      <h2>6. Contact Us</h2>
+      <p>If you have any questions about this Privacy Policy, email us at <a href="mailto:hello@wiretide.app">hello@wiretide.app</a>.</p>
     </div>
   </main>
 
@@ -75,9 +103,10 @@
       <p>© 2026 Wiretide</p>
       <nav aria-label="Footer">
         <a href="/">Home</a>
-        <a href="/privacy/">Privacy</a>
-        <a href="/terms/">Terms</a>
-        <a href="/refunds/">Refunds</a>
+        <a href="/terms/">Terms of Service</a>
+        <a href="/privacy/">Privacy Policy</a>
+        <a href="/eula/">License Agreement</a>
+        <a href="/fulfillment-policy/">Fulfillment Policy</a>
         <a href="mailto:hello@wiretide.app">hello@wiretide.app</a>
       </nav>
     </div>
