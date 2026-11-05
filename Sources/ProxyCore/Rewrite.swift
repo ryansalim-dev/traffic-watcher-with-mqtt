@@ -103,12 +103,20 @@ public struct MapLocalResponse: Codable, Equatable, Hashable, Sendable {
     public var editableHeaders: [EditableHeader] {
         get {
             if let headerRows, EditableHeader.sent(headerRows) == headers { return headerRows }
-            return headers.map(EditableHeader.init)
+            // Rebuilt rows get ids from their position, so every read returns the same rows. Fresh
+            // UUIDs on each read gave SwiftUI new identities every render of the header table.
+            return headers.enumerated().map { index, header in
+                EditableHeader(id: Self.rowID(index), name: header.name, value: header.value)
+            }
         }
         set {
             headerRows = newValue
             headers = EditableHeader.sent(newValue)
         }
+    }
+
+    static func rowID(_ index: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-4000-8000-%012X", index))!
     }
 
     /// Builds the response, reading the file if there is one. A file that can't be read gives a
