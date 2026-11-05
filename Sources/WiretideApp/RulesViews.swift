@@ -54,10 +54,10 @@ struct RulesToolbarButton: View {
     }
 
     private var help: String {
-        if !center.isAllowed { return "Map Local, Map Remote and Rewrite are part of Wiretide Pro (⇧⌘M)" }
         if !center.isEnabled { return "Map and rewrite are off (⇧⌘M)" }
         let count = center.enabledCount
-        return "\(count) map and rewrite rule\(count == 1 ? "" : "s") on (⇧⌘M)"
+        let free = center.isLimited ? " · Free runs 1 of each kind at a time" : ""
+        return "\(count) map and rewrite rule\(count == 1 ? "" : "s") on\(free) (⇧⌘M)"
     }
 }
 
@@ -77,9 +77,10 @@ struct RulesWindow: View {
                 .background(Theme.sidebar)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
             VStack(spacing: 0) {
-                if !center.isAllowed {
-                    ProNotice(feature: "Map and rewrite",
-                              detail: "Your rules are kept, but traffic only changes with Pro.")
+                if let limit = center.limit {
+                    FreeLimitBanner(title: limit == 1 ? "Wiretide Free runs 1 rule of each kind at a time"
+                                                      : "Wiretide Free runs \(limit) rules of each kind at a time",
+                                    detail: "One Map Local, Map Remote, Rewrite and MQTT Rewrite rule can be on together. Pro runs them all.")
                         .padding(.horizontal, 20)
                         .padding(.top, 14)
                 }
@@ -92,6 +93,7 @@ struct RulesWindow: View {
         .frame(minWidth: 900, idealWidth: 980, minHeight: 600, idealHeight: 660)
         .background(GraphiteWindow())
         .tint(Theme.accent)
+        .proLimitPrompt(Bindable(center).limitPrompt)
     }
 
     @ViewBuilder private var editor: some View {
@@ -137,7 +139,6 @@ struct RulesWindow: View {
     }
 
     private var footerText: String {
-        if !center.isAllowed { return "Rules are saved and start working when Pro is active" }
         if !center.isEnabled { return "Map and rewrite are off; nothing is changed" }
         return "Changes apply to the next request · no restart needed"
     }
@@ -194,6 +195,7 @@ struct RulesList: View {
                         ForEach($center.httpRules) { $rule in
                             RuleRow(isOn: $rule.isEnabled, pill: Theme.pillText(for: rule.kind), color: Theme.color(for: rule.kind),
                                     title: rule.displayName, detail: detail(rule),
+                                    isHeld: center.heldRuleIDs.contains(rule.id),
                                     isSelected: center.selection == .http(rule.id)) {
                                 center.selection = .http(rule.id)
                             }
@@ -204,6 +206,7 @@ struct RulesList: View {
                         ForEach($center.mqttRules) { $rule in
                             RuleRow(isOn: $rule.isEnabled, pill: "MQTT", color: Theme.mqtt,
                                     title: rule.displayName, detail: rule.name.isEmpty ? rule.direction.title : rule.topicFilter,
+                                    isHeld: center.heldRuleIDs.contains(rule.id),
                                     isSelected: center.selection == .mqtt(rule.id)) {
                                 center.selection = .mqtt(rule.id)
                             }
@@ -267,6 +270,8 @@ struct RuleRow: View {
     let color: Color
     let title: String
     let detail: String
+    /// Switched on, but waiting for Pro (Free runs fewer at a time).
+    var isHeld = false
     let isSelected: Bool
     let select: () -> Void
 
@@ -279,6 +284,7 @@ struct RuleRow: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if isHeld { NeedsProBadge() }
                 }
                 Text(detail)
                     .font(Theme.monoSmall)

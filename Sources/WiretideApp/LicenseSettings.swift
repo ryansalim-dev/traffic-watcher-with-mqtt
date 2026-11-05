@@ -72,11 +72,16 @@ struct LicenseSettings: View {
             Section {
                 ForEach(ProFeature.allCases, id: \.self) { feature in
                     Label {
-                        Text(feature == .unlimitedSessions
-                             ? "\(feature.title) (Free keeps \(FreeSessions.count(license.policy.freeSavedSessions)))"
-                             : feature.title)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(feature.title)
+                            if !license.entitlement.allows(feature) {
+                                Text(feature.freeAllowance(license.policy))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     } icon: {
-                        Image(systemName: license.entitlement.allows(feature) ? "checkmark.circle.fill" : "lock")
+                        Image(systemName: license.entitlement.allows(feature) ? "checkmark.circle.fill" : "circle.lefthalf.filled")
                             .foregroundStyle(license.entitlement.allows(feature) ? Color.green : Color.secondary)
                     }
                 }

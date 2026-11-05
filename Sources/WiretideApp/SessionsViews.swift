@@ -554,7 +554,7 @@ struct SessionLimitSheet: View {
                     Image(systemName: "seal.fill").foregroundStyle(Theme.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Wiretide Pro keeps every session").font(.system(size: 12.5, weight: .semibold))
-                        Text("A one-time purchase that also adds breakpoints, map and rewrite, MQTT publish and replay, and scripting.")
+                        Text("A one-time purchase that also lifts the limits on breakpoints, map and rewrite, scripting, and MQTT publish and replay.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

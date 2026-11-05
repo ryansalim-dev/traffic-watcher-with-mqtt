@@ -56,10 +56,10 @@ struct ScriptsToolbarButton: View {
     }
 
     private var help: String {
-        if !center.isAllowed { return "Scripting is part of Wiretide Pro (⇧⌘J)" }
         if !center.isEnabled { return "Scripts are off (⇧⌘J)" }
         let count = center.enabledCount
-        return "\(count) script\(count == 1 ? "" : "s") on (⇧⌘J)"
+        let free = center.isLimited ? " · Free runs 1 at a time" : ""
+        return "\(count) script\(count == 1 ? "" : "s") on\(free) (⇧⌘J)"
     }
 }
 
@@ -79,9 +79,9 @@ struct ScriptsWindow: View {
                 .background(Theme.sidebar)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
             VStack(spacing: 0) {
-                if !center.isAllowed {
-                    ProNotice(feature: "Scripting",
-                              detail: "Your scripts are kept, and you can try them on captured traffic, but they only change live traffic with Pro.")
+                if let limit = center.limit {
+                    FreeLimitBanner(title: limit == 1 ? "Wiretide Free runs 1 script at a time" : "Wiretide Free runs \(limit) scripts at a time",
+                                    detail: "Keep as many scripts as you like and try any of them on captured traffic. Pro runs them all at once.")
                         .padding(.horizontal, 20)
                         .padding(.top, 14)
                 }
@@ -94,6 +94,7 @@ struct ScriptsWindow: View {
         .frame(minWidth: 940, idealWidth: 1040, minHeight: 640, idealHeight: 720)
         .background(GraphiteWindow())
         .tint(Theme.accent)
+        .proLimitPrompt(Bindable(center).limitPrompt)
     }
 
     @ViewBuilder private var editor: some View {
@@ -128,7 +129,6 @@ struct ScriptsWindow: View {
 
     private var footerText: String {
         if !LiveScripts.isSupported { return "Scripts need JavaScriptCore, which this system doesn't have" }
-        if !center.isAllowed { return "Scripts are saved and start running when Pro is active" }
         if !center.isEnabled { return "Scripts are off; traffic passes untouched" }
         return "Edits apply to the next request · scripts restart from the top when edited"
     }
@@ -179,6 +179,7 @@ struct ScriptsList: View {
                         let pill = Theme.pill(for: script)
                         RuleRow(isOn: $script.isEnabled, pill: pill.text, color: pill.color,
                                 title: script.displayName, detail: detail(script),
+                                isHeld: center.heldScriptIDs.contains(script.id),
                                 isSelected: center.selection == script.id) {
                             center.selection = script.id
                         }

@@ -8,11 +8,13 @@ import XCTest
 
 final class RewriteCenterTests: XCTestCase {
     @MainActor
-    func testRulesReachTheProxyOnlyWithProAndTheSwitchOn() async {
+    func testRulesReachTheProxyOnlyWithTheSwitchOn() async {
         let rule = HTTPRule(pattern: "*", kind: .mapLocal)
-        let center = RewriteCenter(settings: RewriteSettings(http: [rule], mqtt: [MQTTRule(topicFilter: "#")]))
-        XCTAssertTrue(center.rules.http.isEmpty, "free tier keeps rules but applies none")
-        center.isAllowed = true
+        let second = HTTPRule(pattern: "b/*", kind: .mapLocal)
+        let center = RewriteCenter(settings: RewriteSettings(http: [rule, second], mqtt: [MQTTRule(topicFilter: "#")]))
+        XCTAssertEqual(center.rules.http, [rule], "free tier applies one rule of each kind")
+        XCTAssertEqual(center.rules.mqtt.count, 1)
+        center.httpRules.removeLast()
         XCTAssertEqual(center.rules.http, [rule])
         XCTAssertEqual(center.rules.mqtt.count, 1)
         center.isEnabled = false
@@ -80,9 +82,9 @@ final class RewriteCenterTests: XCTestCase {
         model.ingest(.httpExchange(HTTPExchange(startedAt: Date(), duration: 0.1, method: "POST", url: "https://other.example.com/",
                                                 requestHeaders: [], requestBody: [], statusCode: 200, responseHeaders: [], responseBody: [])))
         model.apply(.pro(coveredUntil: Date().addingTimeInterval(86_400)))
-        XCTAssertTrue(model.rewrites.isAllowed)
+        XCTAssertNil(model.rewrites.limit)
         model.apply(.free(.noLicense))
-        XCTAssertFalse(model.rewrites.isAllowed)
+        XCTAssertEqual(model.rewrites.limit, 1)
 
         let rule = try XCTUnwrap(model.addRule(.rewrite, for: model.rows[0]))
         XCTAssertTrue(model.rewrites.isPresented)

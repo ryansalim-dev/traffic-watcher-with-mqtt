@@ -59,13 +59,27 @@ struct MQTTComposerView: View {
                     BrokerSettingsForm(target: $composer.target)
                 }
             }
-            if !composer.isAllowed {
-                ProNotice(feature: "MQTT publish and replay", detail: "You can fill this in now; sending needs a Pro license.")
-            }
+            freeNotice
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    }
+
+    /// On the free tier: what Free can send, or why this message can't go.
+    @ViewBuilder private var freeNotice: some View {
+        if let limit = composer.replayLimit {
+            if let block = composer.freeTierBlock {
+                let prompt = ProLimitPrompt(block)
+                FreeLimitBanner(title: prompt.title, detail: prompt.message,
+                                actionTitle: block == .editedReplay ? "Undo Changes" : nil,
+                                action: block == .editedReplay ? { composer.revertToCaptured() } : nil)
+            } else {
+                let left = composer.replaysLeft ?? limit
+                FreeLimitBanner(title: "Wiretide Free resends this message exactly as captured",
+                                detail: "\(left) of \(limit) free replays left in this session. Pro lets you edit it first, write new messages and replay without limits.")
+            }
+        }
     }
 
     private var connectionTitle: String {
@@ -253,7 +267,7 @@ struct MQTTComposerView: View {
                     .lineLimit(2)
                     .textSelection(.enabled)
             }
-        } else if let problem = composer.problem, composer.isAllowed {
+        } else if let problem = composer.problem, composer.freeTierBlock == nil {
             Text(problem).foregroundStyle(.secondary)
         }
     }

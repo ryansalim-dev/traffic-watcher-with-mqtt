@@ -134,6 +134,8 @@ enum Screenshots {
         try await shootProTools(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper, into: directory)
         try await shootRules(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
         try await shootScripts(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, into: directory)
+        try await shootFreeLimits(model: model, storage: storage, freeLicense: freeLicense, proLicense: proLicense, helper: helper,
+                                  into: directory)
         try await shootSessions(model: model, storage: storage, scratch: scratch, freeLicense: freeLicense, proLicense: proLicense,
                                 into: directory)
         try await shootSessionLimit(storage: storage, freeLicense: freeLicense, into: directory)
@@ -477,6 +479,61 @@ enum Screenshots {
             try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: size, dark: false,
                             name: "27-mqtt-rewritten", into: directory)
         }
+    }
+
+    /// The free tier's limits after a downgrade (rules past the limit wait for Pro), the prompt when
+    /// one more is turned on, and resending a captured MQTT message.
+    private static func shootFreeLimits(model: CaptureViewModel, storage: CertificateStorage, freeLicense: LicenseManager,
+                                        proLicense: LicenseManager, helper: SystemProxyHelper, into directory: URL) async throws {
+        // A second Map Local rule from Pro days, so the downgrade leaves one waiting.
+        model.apply(proLicense.entitlement)
+        let rewrites = model.rewrites
+        let extra = rewrites.addHTTPRule(kind: .mapLocal, pattern: "https://api.example.com/v2/user*", method: "GET")
+        if let index = rewrites.httpRules.firstIndex(where: { $0.id == extra.id }) { rewrites.httpRules[index].name = "Mock signed-out user" }
+        model.apply(freeLicense.entitlement)
+        rewrites.selection = .http(extra.id)
+        let rulesSize = NSSize(width: 980, height: 660)
+        try await shoot(RulesWindow(model: model), size: rulesSize, dark: false, name: "40-free-rules-waiting", into: directory,
+                        title: "Map & Rewrite")
+        try await shoot(RulesWindow(model: model), size: rulesSize, dark: true, name: "40b-free-rules-waiting-dark", into: directory,
+                        title: "Map & Rewrite")
+
+        // Turning on one more than Free runs: the rule is kept, switched off, and the prompt explains.
+        let prompt = ProLimitPrompt(.ruleLimit(.mapLocal, limit: freeLicense.policy.freeLimits.activeRules))
+        func promptStage() -> AnyView {
+            AnyView(ZStack(alignment: .top) {
+                RulesWindow(model: model)
+                SheetStage(width: 440, height: 184) { ProLimitSheet(prompt: prompt) {} }
+            })
+        }
+        try await shoot(promptStage(), size: rulesSize, dark: false, name: "41-free-limit-prompt", into: directory, title: "Map & Rewrite")
+        try await shoot(promptStage(), size: rulesSize, dark: true, name: "41b-free-limit-prompt-dark", into: directory, title: "Map & Rewrite")
+
+        try await shoot(ScriptsWindow(model: model), size: NSSize(width: 1040, height: 720), dark: true, name: "42-free-scripts-waiting-dark",
+                        into: directory, title: "Scripts")
+        try await shoot(SettingsView(model: model, certificates: storage, license: freeLicense, helper: helper, tab: .breakpoints),
+                        size: NSSize(width: 560, height: 600), dark: false, name: "43-free-settings-breakpoints", into: directory)
+
+        // MQTT on Free: a captured message resent as it arrived, and the same message after an edit.
+        model.section = .mqtt
+        if let publish = model.rows.last(where: { $0.kind == .mqtt && $0.summary.contains("home/kitchen/temperature") }) {
+            model.selection = publish.id
+            model.prepareReplay(of: publish)
+        }
+        model.composer.repeatCount = 1
+        let stage = NSSize(width: 1440, height: 760)
+        func composerStage() -> ContentView {
+            ContentView(model: model, certificates: storage, license: freeLicense, presentsSheets: false,
+                        stagedSheet: AnyView(SheetStage(height: 560) {
+                MQTTComposerView(composer: model.composer, suggestions: model.topicSuggestions(excluding: model.composer.topic))
+            }))
+        }
+        try await shoot(composerStage(), size: stage, dark: false, name: "44-free-mqtt-replay", into: directory, dimToolbar: true)
+        try await shoot(composerStage(), size: stage, dark: true, name: "44b-free-mqtt-replay-dark", into: directory, dimToolbar: true)
+        model.composer.retain.toggle()
+        try await shoot(composerStage(), size: stage, dark: true, name: "45-free-mqtt-replay-edited-dark", into: directory, dimToolbar: true)
+        model.composer.revertToCaptured()
+        model.apply(proLicense.entitlement)
     }
 
     /// The scripts window: empty and locked, HTTP and MQTT scripts after a test run, a syntax error, and the inspector note.

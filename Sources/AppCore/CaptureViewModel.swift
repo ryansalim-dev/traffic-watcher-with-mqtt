@@ -206,6 +206,7 @@ public final class CaptureViewModel {
         let breakpoints = breakpoints ?? BreakpointCenter()
         self.breakpoints = breakpoints
         self.composer = composer ?? MQTTComposer(publisher: engine?.makePublisher())
+        self.composer.replaySession = store.currentSession
         engine?.breakpoints = breakpoints.handler
         let rewrites = rewrites ?? RewriteCenter()
         self.rewrites = rewrites
@@ -232,12 +233,15 @@ public final class CaptureViewModel {
 
     // MARK: Pro
 
-    /// Unlocks or locks the Pro tools for this entitlement.
-    public func apply(_ entitlement: Entitlement) {
-        breakpoints.isAllowed = entitlement.allows(.breakpoints)
-        composer.isAllowed = entitlement.allows(.mqttPublish)
-        rewrites.isAllowed = entitlement.allows(.mapRewrite)
-        scripts.isAllowed = entitlement.allows(.scripting)
+    /// Lifts the free tier's limits on the Pro tools with Pro, or puts them back without it.
+    /// Rules that were on stay on: past the limit they are kept but wait for Pro.
+    public func apply(_ entitlement: Entitlement, policy: LicensePolicy = .standard) {
+        let limits = entitlement.limits(policy)
+        breakpoints.limit = limits?.activeRules
+        rewrites.limit = limits?.activeRules
+        scripts.limit = limits?.activeRules
+        composer.replayLimit = limits?.replaysPerSession
+        composer.replaySession = store.currentSession
     }
 
     /// Starts a script from an HTTP exchange or a PUBLISH row and opens the scripts window on it.
@@ -285,7 +289,7 @@ public final class CaptureViewModel {
     @discardableResult
     public func prepareReplay(of row: TrafficRow) -> Bool {
         guard case .mqtt(let capture) = row.event, case .publish = capture.event.packet else { return false }
-        composer.prepareReplay(of: capture, forwarders: configuration.forwarders)
+        composer.prepareReplay(of: capture, forwarders: configuration.forwarders, fromSavedSession: viewedSession != nil)
         return true
     }
 
@@ -362,6 +366,7 @@ public final class CaptureViewModel {
         do {
             let previous = store.currentSession
             try store.startSession(named: name)
+            composer.replaySession = store.currentSession
             // A session that never recorded anything isn't worth keeping.
             if try store.events(in: previous, limit: 1).isEmpty { try? store.deleteSession(previous) }
             rows = []
@@ -483,6 +488,7 @@ public final class CaptureViewModel {
         guard saved.count > limit, let latest = saved.first else { return false }
         do {
             try store.resumeSession(latest.id)
+            composer.replaySession = store.currentSession
             let events = try store.allEvents(in: latest.id)
             var tree = TopicTree()
             for stored in events {

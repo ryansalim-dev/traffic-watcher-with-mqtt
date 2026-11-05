@@ -1,4 +1,5 @@
 import Foundation
+import Licensing
 import MQTTCore
 import Observation
 import ProxyCore
@@ -22,22 +23,37 @@ public struct ScriptSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Owns the user scripts (Pro) and their console. Edits reach the proxy at once through `live`;
-/// without Pro, or with the master switch off, scripts are kept but none runs.
+/// Owns the user scripts and their console. Edits reach the proxy at once through `live`; with
+/// the master switch off, scripts are kept but none runs. Free runs `limit` scripts at a time;
+/// Pro runs them all.
 @MainActor
 @Observable
 public final class ScriptCenter {
     public var scripts: [UserScript] {
-        didSet { changed() }
+        didSet {
+            guard !isRefusing else { return }
+            var checked = scripts
+            if RuleLimit.refuse(old: oldValue, new: &checked, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 }) != nil {
+                isRefusing = true
+                scripts = checked
+                isRefusing = false
+                if let limit { limitPrompt = ProLimitPrompt(.ruleLimit(.script, limit: limit)) }
+            }
+            changed()
+        }
     }
     /// The master switch in the scripts window and the Capture menu.
     public var isEnabled: Bool {
         didSet { changed() }
     }
-    /// Whether the license allows scripting.
-    public var isAllowed = false {
+    /// Enabled scripts that run at once on the free tier; nil with Pro. Scripts past it are kept,
+    /// and the first ones in the list keep running, so a downgrade doesn't change which ones run.
+    public var limit: Int? = LicensePolicy.standard.freeLimits.activeRules {
         didSet { push() }
     }
+    /// Set when turning a script on went past `limit`; the UI shows it as a short Pro prompt.
+    public var limitPrompt: ProLimitPrompt?
+    @ObservationIgnored private var isRefusing = false
     /// The script open in the scripts window.
     public var selection: UUID?
     /// Shows the scripts window; set by the timeline's context menu.
@@ -68,7 +84,22 @@ public final class ScriptCenter {
     }
 
     /// True when enabled scripts actually run.
-    public var isActive: Bool { isEnabled && isAllowed }
+    public var isActive: Bool { isEnabled }
+
+    /// True on the free tier.
+    public var isLimited: Bool { limit != nil }
+
+    /// The enabled scripts that run.
+    public var runningScripts: [UserScript] {
+        let ids = RuleLimit.running(scripts, limit: limit, isEnabled: \.isEnabled, group: { _ in 0 })
+        return scripts.filter { ids.contains($0.id) }
+    }
+
+    /// Enabled scripts that the free tier's limit keeps from running.
+    public var heldScriptIDs: Set<UUID> {
+        let running = Set(runningScripts.map(\.id))
+        return Set(scripts.filter { $0.isEnabled && !running.contains($0.id) }.map(\.id))
+    }
 
     public var enabledCount: Int { scripts.filter(\.isEnabled).count }
 
@@ -85,7 +116,7 @@ public final class ScriptCenter {
     }
 
     private func push() {
-        live.update(isActive ? scripts : [])
+        live.update(isActive ? runningScripts : [])
     }
 
     public func append(_ entries: [ScriptLogEntry]) {
