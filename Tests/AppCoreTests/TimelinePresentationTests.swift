@@ -244,12 +244,14 @@ final class ToolbarFitTests: XCTestCase {
     func testPartsDropInOrderAsTheColumnNarrows() {
         var previous = ToolbarFit()
         var sawFolded = false
-        for width in stride(from: 1100.0, through: 380, by: -10) {
+        for width in stride(from: 1100.0, through: 300, by: -5) {
             let fit = ToolbarFit.fitting(width: width, buttons: 5, showsModeSwitch: false)
             // Nothing comes back as the column narrows.
             if !previous.showsSparkline { XCTAssertFalse(fit.showsSparkline, "\(width)") }
             if !previous.showsRecordingLabel { XCTAssertFalse(fit.showsRecordingLabel, "\(width)") }
             if !previous.showsCount { XCTAssertFalse(fit.showsCount, "\(width)") }
+            if !previous.showsTimer { XCTAssertFalse(fit.showsTimer, "\(width)") }
+            if fit.searchWidth != nil { XCTAssertTrue(fit.showsTimer) }
             if let old = previous.searchWidth, let new = fit.searchWidth { XCTAssertLessThanOrEqual(new, old) }
             if previous.searchWidth == nil { XCTAssertNil(fit.searchWidth, "\(width)") }
             // The sparkline goes before the label, and the label before the count.
@@ -268,6 +270,14 @@ final class ToolbarFitTests: XCTestCase {
         let fit = ToolbarFit.fitting(width: 710, buttons: 5, showsModeSwitch: false)
         XCTAssertLessThan(fit.searchWidth ?? 0, ToolbarFit.searchWidest, "the full-width field is what overlapped")
         XCTAssertNotNil(fit.searchWidth)
+    }
+
+    func testNarrowestMQTTColumnNarrowsTheSwitchAndKeepsTheTimer() {
+        let fit = ToolbarFit.fitting(width: 500, buttons: 5, showsModeSwitch: true)
+        XCTAssertTrue(fit.compactModeSwitch)
+        XCTAssertTrue(fit.showsTimer)
+        XCTAssertNil(fit.searchWidth)
+        XCTAssertFalse(ToolbarFit.fitting(width: 1100, buttons: 5, showsModeSwitch: true).compactModeSwitch)
     }
 
     func testModeSwitchAndInspectorButtonTakeRoom() {
