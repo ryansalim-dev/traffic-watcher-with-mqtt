@@ -253,7 +253,7 @@ details p { color: var(--muted); margin: 12px 0 0; }
 .footer { padding: 32px 0; color: var(--muted); font-size: 0.9rem; }
 .footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 .footer p { margin: 0; }
-.footer nav { display: flex; gap: 20px; }
+.footer nav { display: flex; flex-wrap: wrap; gap: 10px 20px; }
 .footer a { color: var(--muted); }
 .footer a:hover { color: var(--text); }
 
@@ -287,3 +287,15 @@ details p { color: var(--muted); margin: 12px 0 0; }
   .btn { transition: none; }
 }
 .waitlist-fallback[hidden] + .download { border-top: 0; margin-top: 24px; padding-top: 0; }
+
+/* Legal pages (privacy, terms, refunds) */
+.legal { padding: 64px 0 88px; }
+.legal h1 { font-size: clamp(2rem, 4.5vw, 2.8rem); }
+.legal .updated { color: var(--muted); margin: 12px 0 0; font-size: 0.95rem; }
+.legal .summary { margin: 32px 0 0; padding: 18px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.legal .summary p { margin: 0; }
+.legal h2 { font-size: 1.3rem; max-width: none; margin: 40px 0 0; }
+.legal p, .legal ul { margin: 12px 0 0; }
+.legal ul { padding-left: 1.3em; }
+.legal li + li { margin-top: 6px; }
+.legal strong { font-weight: 650; }
