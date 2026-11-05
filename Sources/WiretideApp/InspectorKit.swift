@@ -21,53 +21,20 @@ extension Theme {
 }
 
 /// Read-only code with line numbers, JSON colored when asked. Scrolls both ways and keeps lines unwrapped.
+///
+/// Backed by NSTextView (through CodeEditor), which lays out only the visible part. A SwiftUI Text
+/// sized the whole body on every layout pass, so opening a large response hung the main thread.
 struct CodeText: View {
     let text: String
     var highlightJSON = false
     var fontSize: CGFloat = 12
-    /// Above this the text is shown plain, without numbers or colors, to keep large bodies fast.
+    /// Above this the text is shown plain, without colors, and long lines wrap, to keep large bodies fast.
     static let highlightLimit = 300_000
 
     var body: some View {
-        let (numbers, content) = Self.render(text, json: highlightJSON)
-        GeometryReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
-                HStack(alignment: .top, spacing: 14) {
-                    if let numbers {
-                        Text(numbers)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.trailing)
-                            .accessibilityHidden(true)
-                    }
-                    Text(content)
-                        .textSelection(.enabled)
-                }
-                .font(.system(size: fontSize, design: .monospaced))
-                .lineSpacing(fontSize * 0.45)
-                .fixedSize()
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .topLeading)
-            }
-        }
-    }
-
-    static func render(_ text: String, json: Bool) -> (String?, AttributedString) {
-        guard text.utf8.count <= highlightLimit else { return (nil, AttributedString(text)) }
-        let lines: [[CodeToken]] = json
-            ? JSONHighlighter.lines(text)
-            : text.split(separator: "\n", omittingEmptySubsequences: false).map { [CodeToken(.plain, String($0))] }
-        var content = AttributedString()
-        for (index, line) in lines.enumerated() {
-            if index > 0 { content.append(AttributedString("\n")) }
-            for token in line {
-                var part = AttributedString(token.text)
-                if let color = Theme.color(for: token.kind) { part.foregroundColor = color }
-                content.append(part)
-            }
-        }
-        let numbers = (1...max(lines.count, 1)).map(String.init).joined(separator: "\n")
-        return (numbers, content)
+        let wraps = text.utf8.count > Self.highlightLimit
+        CodeEditor(text: .constant(text), highlightJSON: highlightJSON, fontSize: fontSize, isEditable: false, wrapsLines: wraps)
+            .id(wraps) // wrapping is set up when the text view is made
     }
 }
 
@@ -448,11 +415,26 @@ struct BodyPanel: View {
     let contentType: String?
     var emptyText = "No body"
     @State private var mode = Mode.formatted
+    /// Pretty-printing up to a megabyte isn't free, so it runs once per body rather than on every render.
+    @State private var cache = PresentationCache()
 
     enum Mode { case formatted, tree, hex }
 
+    final class PresentationCache {
+        private var key: (count: Int, hash: Int, contentType: String?)?
+        private var value: BodyPresentation = .empty
+
+        func presentation(_ bytes: [UInt8], contentType: String?) -> BodyPresentation {
+            let hash = bytes.hashValue
+            if let key, key.count == bytes.count, key.hash == hash, key.contentType == contentType { return value }
+            value = Formatting.present(bytes, contentType: contentType)
+            key = (bytes.count, hash, contentType)
+            return value
+        }
+    }
+
     var body: some View {
-        let presentation = Formatting.present(bytes, contentType: contentType)
+        let presentation = cache.presentation(bytes, contentType: contentType)
         VStack(alignment: .leading, spacing: 0) {
             if case .empty = presentation {
                 Text(emptyText).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
