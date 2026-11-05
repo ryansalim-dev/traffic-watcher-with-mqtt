@@ -16,7 +16,7 @@ struct LicenseSettings: View {
                         .foregroundStyle(license.entitlement.isPro ? Color.accentColor : Color.secondary)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(license.entitlement.isPro ? "Wiretide Pro" : "Wiretide Free").font(.headline)
-                        Text(license.entitlement == .free(.noLicense) ? "Captures and inspects everything. Pro adds the tools below." : license.summary)
+                        Text(license.entitlement == .free(.noLicense) ? "Captures and inspects everything, and tries every Pro tool. Pro lifts the limits below." : license.summary)
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()

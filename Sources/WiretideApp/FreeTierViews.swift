@@ -119,6 +119,8 @@ struct NeedsProBadge: View {
     var body: some View {
         Text("Needs Pro")
             .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(Theme.warning)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

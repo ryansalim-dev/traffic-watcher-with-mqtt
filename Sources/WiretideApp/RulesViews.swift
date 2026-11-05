@@ -284,13 +284,15 @@ struct RuleRow: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                }
+                HStack(spacing: 6) {
+                    Text(detail)
+                        .font(Theme.monoSmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     if isHeld { NeedsProBadge() }
                 }
-                Text(detail)
-                    .font(Theme.monoSmall)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
             }
             Spacer(minLength: 4)
             Toggle("Enabled", isOn: $isOn)
