@@ -139,6 +139,7 @@ enum Screenshots {
         try await shootSessions(model: model, storage: storage, scratch: scratch, freeLicense: freeLicense, proLicense: proLicense,
                                 into: directory)
         try await shootSessionLimit(storage: storage, freeLicense: freeLicense, into: directory)
+        try await shootLayout(model: model, storage: storage, license: freeLicense, into: directory)
         await model.stopCapture()
     }
 
@@ -625,6 +626,48 @@ enum Screenshots {
         model.selection = model.rows.last?.id
         try await shoot(ContentView(model: model, certificates: storage, license: proLicense), size: NSSize(width: 1440, height: 860), dark: true,
                         name: "32-timeline-scripted-dark", into: directory)
+    }
+
+    /// Empty states with the sidebar and inspector closed, and the toolbar at narrow window widths.
+    private static func shootLayout(model: CaptureViewModel, storage: CertificateStorage, license: LicenseManager,
+                                    into directory: URL) async throws {
+        model.returnToLive()
+        model.searchText = ""
+        model.quickFilter = .all
+        model.hostFilter = nil
+        model.selection = nil
+
+        // A host filter that matches nothing, as in Ryan's report: the filter bar and "No matches".
+        model.section = .mqtt
+        model.hostFilter = "integration-api.example.com"
+        try await shoot(ContentView(model: model, certificates: storage, license: license, showInspector: false,
+                                    columnVisibility: .detailOnly),
+                        size: NSSize(width: 1080, height: 900), dark: true, name: "50-packets-no-matches-dark", into: directory)
+        model.hostFilter = nil
+
+        // HTTP only, so the Topics tab has nothing yet.
+        let httpOnly = CaptureViewModel(store: try CaptureStore(path: ":memory:", sessionName: "HTTP"), engine: nil)
+        for event in SampleTraffic.events() {
+            if case .httpExchange = event { httpOnly.ingest(event) }
+        }
+        httpOnly.section = .mqtt
+        try await shoot(ContentView(model: httpOnly, certificates: storage, license: license, mqttMode: .topics, showInspector: false,
+                                    columnVisibility: .detailOnly),
+                        size: NSSize(width: 1080, height: 900), dark: true, name: "51-topics-empty-dark", into: directory)
+        try await shoot(ContentView(model: httpOnly, certificates: storage, license: license, mqttMode: .topics),
+                        size: NSSize(width: 1280, height: 760), dark: false, name: "51b-topics-empty-panes", into: directory)
+
+        // The toolbar with the sidebar and inspector open, from the window's minimum width up.
+        model.selection = model.rows.first { $0.kind == .http }?.id
+        for width in [1000, 1120, 1280] {
+            model.section = .all
+            try await shoot(ContentView(model: model, certificates: storage, license: license),
+                            size: NSSize(width: CGFloat(width), height: 640), dark: true, name: "52-toolbar-\(width)-dark", into: directory)
+            model.section = .mqtt
+            try await shoot(ContentView(model: model, certificates: storage, license: license),
+                            size: NSSize(width: CGFloat(width), height: 640), dark: true, name: "53-toolbar-mqtt-\(width)-dark", into: directory)
+        }
+        model.section = .all
     }
 
     private static func shoot<V: View>(_ view: V, size: NSSize, dark: Bool, name: String, into directory: URL,
